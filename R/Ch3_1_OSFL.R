@@ -23,12 +23,12 @@ bird_data <- list.files(here("data", "audio_output_combined"),
   map_df(~ read_csv(file = .))
 
 # keep only Olive-sided Flycatcher and valid detections
-bird_data_OSFL <- bird_data %>%
+bird_data_target <- bird_data %>%
   filter(str_detect(common_name, "Olive-sided Flycatcher")) %>%
   filter(confidence >= 0.35)
 
 # mutate site and recording, and other necessary columns
-bird_data_OSFL_cleaned <- bird_data_OSFL %>%
+bird_data_target_cleaned <- bird_data_target %>%
   mutate(site = str_split_i(filepath, pattern = "\\\\", i = -2),
          recording = str_split_i(filepath, pattern = "\\\\", i = -1)) %>%
   mutate(datetime = str_split_i(recording, pattern = ".WAV", i = 1) %>% as_datetime(),
@@ -59,22 +59,25 @@ weather_data <- list.files(here("data", "weather_2020_2022_daily"),
                         full.names = TRUE) %>%
   map_df(~ read_csv(file = .))
 
-weather_data_clean <- weather_data %>%
+weather_data_cleaned <- weather_data %>%
   clean_names() %>%
-  mutate(date = as_date(date_time)) %>%
+  mutate(date = as_date(date_time),
+         yday = yday(date)) %>%
   filter(month(date) %in% 5:7) %>% # the same as the effort, from May to July
-  select(date, min_temp_c, mean_temp_c, total_rain_mm, spd_of_max_gust_km_h)
+  select(date, yday, max_temp_c, min_temp_c, mean_temp_c) 
+
+
 
 
 
 # check the temporal change of the detections -----------------------------
 
 # data wrangling
-daily_detection <- bird_data_OSFL_cleaned %>%
-  # only keep sites that have OSFL - at least 10 days with OSFL detections
+daily_detection <- bird_data_target_cleaned %>%
+  # only keep sites that have target species - at least n days with target species detections
   group_nest(site) %>%
-  mutate(site_OSFL_days = map_dbl(data, ~ n_distinct(.x$date))) %>%
-  filter(site_OSFL_days >= 15) %>% # 12 different sites with at least 15 days of OSFL detections
+  mutate(site_target_days = map_dbl(data, ~ n_distinct(.x$date))) %>%
+  filter(site_target_days >= 10) %>% # 14 different sites with at least 10 days of target species detections
   unnest(data) %>%
   
   # calculate detections per ARU for each date
@@ -85,46 +88,48 @@ daily_detection <- bird_data_OSFL_cleaned %>%
   mutate(detections_per_ARU = detections / ARUs) %>%
   
   # remove outlier
-  filter(detections_per_ARU < 10) 
+  filter(detections_per_ARU < 10) %>%
+  
+  # combine with the weather data
+  left_join(weather_data_cleaned) 
+
+
+# correlation calculation
+daily_detection_cor <- daily_detection %>%
+  mutate(year = year(date)) %>%
+  group_nest(year) %>%
+  mutate(cor = map(data, ~ cor(.x[5:8]))) 
 
 
 # visualization
 daily_detection_fig <- daily_detection %>%
   mutate(year = year(date) %>% as_factor()) %>%
-  ggplot(aes(x = yday, y = detections_per_ARU, fill = year)) +
-  geom_bar(stat = "identity",
-           position = "identity",
-           alpha = .7) +
-  facet_wrap(~ year, ncol = 1, scales = "free_y") +
-  theme_bw()
+  
+  ggplot(aes(x = yday, fill = year)) +
+  geom_bar(aes(y = detections_per_ARU),
+           stat = "identity",
+           position = "identity") +
+  geom_line(aes(y = mean_temp_c / 4),
+            colour = "#fb4d3d",
+            size = 1.5, 
+            alpha = 0.3) +
+  
+  facet_wrap(~ year, ncol = 1) +
+  labs(x = "Julian day") +
+  scale_y_continuous(name = "Detections per ARU",
+                     sec.axis = sec_axis(~.*4, name = "Mean temperature (degree C)")) +
+  scale_fill_manual(values = c("#eac435", "#345995", "#7bccc4")) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
+        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        legend.position = "none",
+        strip.text = element_text(size = 10))
 
 daily_detection_fig
-
-
-
-
-# check the temporal change of the temperature ----------------------------
-
-
-# data wrangling
-daily_temperature <- bird_data_OSFL_cleaned %>%
-  # only keep sites that have OSFL - at least 10 days with OSFL detections
-  group_nest(site) %>%
-  mutate(site_OSFL_days = map_dbl(data, ~ n_distinct(.x$date))) %>%
-  filter(site_OSFL_days >= 15) %>% # 12 different sites with at least 15 days of OSFL detections
-  unnest(data) %>%
-  
-  # calculate detections per ARU for each date
-  group_by(date, yday) %>%
-  summarize(detections = n()) %>%
-  ungroup() %>%
-  left_join(ARUs_given_date) %>%
-  mutate(detections_per_ARU = detections / ARUs) %>%
-  
-  # remove outlier
-  filter(detections_per_ARU < 10) 
-
-
 
 
 
