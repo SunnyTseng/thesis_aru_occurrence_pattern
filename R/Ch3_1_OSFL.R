@@ -11,43 +11,36 @@ library(tidyverse)
 library(here)
 library(janitor) # for clean_names
 library(lubridate)
-
+library(birdnetTools)
 
 
 # bird data cleaning ------------------------------------------------------
 
 # bird detections from 3 years of data
-bird_data <- list.files(here("data", "audio_output_combined"),
-                        pattern = ".csv$", recursive = TRUE,
-                        full.names = TRUE) %>%
-  map_df(~ read_csv(file = .))
+bird_data <- birdnet_combine(here("data", "audio_output_combined"))
 
 # keep only Olive-sided Flycatcher and valid detections
 bird_data_target <- bird_data %>%
-  filter(str_detect(common_name, "Olive-sided Flycatcher")) %>%
-  filter(confidence >= 0.35)
+  birdnet_filter(species = "Olive-sided Flycatcher", threshold = 0.35)
 
 # mutate site and recording, and other necessary columns
 bird_data_target_cleaned <- bird_data_target %>%
-  mutate(site = str_split_i(filepath, pattern = "\\\\", i = -2),
-         recording = str_split_i(filepath, pattern = "\\\\", i = -1)) %>%
-  mutate(datetime = str_split_i(recording, pattern = ".WAV", i = 1) %>% as_datetime(),
-         date = date(datetime),
-         yday = yday(datetime)) %>%
-  select(site, datetime, date, yday, start, end)
-
-
+  birdnet_add_datetime() %>%
+  mutate(site = str_split_i(filepath, pattern = "\\\\", i = -2)) %>%
+  select(site, date, year, yday, start, end)
+  
 
 # effort data cleaning ----------------------------------------------------
 
-# get the effort data
+# get the effort data (site active datetime)
 load(here("data", "effort", "effort_site_date.RData"))
 
-# find the active # of ARUs for each of the date
-ARUs_given_date <- effort_eval_1 %>%
-  group_by(date = datetime %>% date()) %>%
-  summarize(ARUs = n_distinct(site)) 
-
+# effort in each day (site active day)
+effort_daily <- effort_eval_1 %>%
+  mutate(date = date(datetime),
+         year = year(datetime),
+         yday = yday(datetime)) %>%
+  distinct(site, date, year, yday)
 
 
 # weather data cleaning ---------------------------------------------------
@@ -72,31 +65,49 @@ weather_data_cleaned <- weather_data %>%
 
 # check the temporal change of the detections -----------------------------
 
-# data wrangling
-daily_detection <- bird_data_target_cleaned %>%
-  # only keep sites that have target species - at least n days with target species detections
-  group_nest(site) %>%
-  mutate(site_target_days = map_dbl(data, ~ n_distinct(.x$date))) %>%
-  filter(site_target_days >= 10) %>% # 14 different sites with at least 10 days of target species detections
-  unnest(data) %>%
+# qualified ARUs (site-year combinations) 
+qualified_ARUs <- bird_data_target_cleaned %>%
+  group_by(site, year) %>%
+  filter(n_distinct(date) >= 20) %>%
+  distinct(site, year)
+
+# effort data to fit the qualifed ARUs
+effort_filtered <- effort_daily %>%
+  semi_join(qualified_ARUs, by = c("site", "year"))
+
+# detection data to fit the qualified ARUs
+detection_filtered <- bird_data_target_cleaned %>%
+  semi_join(qualified_ARUs, by = c("site", "year")) %>%
+  count(site, date, year, yday, name = "detections") 
+
+# summarize the effort data to get the number of detections on each date
+aru_daily <- detection_filtered %>%
+  full_join(effort_filtered, by = c("site", "date", "year", "yday")) %>%
+  mutate(detections = replace_na(detections, 0)) %>%
+  arrange(site, year, yday)
+
+
   
-  # calculate detections per ARU for each date
-  group_by(date, yday) %>%
-  summarize(detections = n()) %>%
-  ungroup() %>%
-  left_join(ARUs_given_date) %>%
-  mutate(detections_per_ARU = detections / ARUs) %>%
-  
-  # remove outlier
-  filter(detections_per_ARU < 10) %>%
-  
-  # combine with the weather data
-  left_join(weather_data_cleaned) 
+
+site_i <- "N_04"
+year_i <- 2020
+
+aru_daily %>%
+  filter(site == site_i, year == year_i) %>%
+  ggplot(aes(x = date, y = detections)) +
+  geom_col(fill = "steelblue") +
+  labs(title = paste("Daily detections for", site_i, "in", year_i),
+       x = "Date",
+       y = "Number of detections") +
+  theme_minimal()
+
+
+
+
 
 
 # correlation calculation
 daily_detection_cor <- daily_detection %>%
-  mutate(year = year(date)) %>%
   group_nest(year) %>%
   mutate(cor = map(data, ~ cor(.x[5:8]))) 
 
