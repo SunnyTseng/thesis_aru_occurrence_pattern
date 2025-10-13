@@ -87,9 +87,95 @@ aru_daily <- detection_filtered %>%
   arrange(site, year, yday)
 
 
-  
 
-site_i <- "N_04"
+
+# quick comparison
+year_i <- 2022
+
+aru_year <- aru_daily %>%
+  filter(year == year_i)
+
+
+
+# compute mean/sd per ARU (weighted by detections)
+aru_norm <- aru_year %>%
+  group_by(site) %>%
+  summarise(
+    mu = weighted.mean(yday, detections, na.rm = TRUE),
+    sigma = sqrt(weighted.mean((yday - mu)^2, detections, na.rm = TRUE))
+  )
+
+# join to detection data
+aru_year_fit <- aru_year %>%
+  left_join(aru_norm, by = "site")
+
+# base plot
+p <- ggplot(aru_year_fit, aes(x = yday, y = detections, fill = site)) +
+  geom_col(position = "identity", alpha = 0.3) +
+  theme_minimal() +
+  labs(
+    title = paste("Daily detections (and normal fit) for ARUs in", year_i),
+    x = "Day of Year",
+    y = "Detections"
+  )
+
+
+# add normal fits
+p +
+  stat_function(
+    data = aru_norm,
+    aes(color = site),
+    fun = function(x, mu, sigma, scale) {
+      scale * dnorm(x, mu, sigma)
+    },
+    args = list(scale = 1),
+    inherit.aes = FALSE
+  )
+
+# generate smooth normal curves per site
+fit_curves <- aru_norm %>%
+  group_by(site) %>%
+  summarise(
+    yday = seq(135, 215, by = 1),  # or range(aru_year$yday)
+    detections_fit = dnorm(yday, mu, sigma)
+  ) %>%
+  group_by(site) %>%
+  mutate(detections_fit = detections_fit / max(detections_fit) * max(aru_year$detections[aru_year$site == first(site)]))
+
+# combine with barplot
+ggplot(aru_year, aes(x = yday, y = detections, fill = site)) +
+  geom_col(alpha = 0.3, position = "identity") +
+  geom_line(data = fit_curves, aes(x = yday, y = detections_fit, color = site), size = 1) +
+  facet_grid(site ~ .) +
+  
+  theme_minimal() +
+  labs(title = paste("Daily detections and normal fits per ARU (", year_i, ")", sep = ""),
+    x = "Day of Year",
+    y = "Detections",
+    fill = "Site",
+    color = "Normal fit") +
+  theme(legend.position = "none")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# others ------------------------------------------------------------------
+
+
+## single site
+
+site_i <- "N_25"
 year_i <- 2020
 
 aru_daily %>%
@@ -100,9 +186,6 @@ aru_daily %>%
        x = "Date",
        y = "Number of detections") +
   theme_minimal()
-
-
-
 
 
 
