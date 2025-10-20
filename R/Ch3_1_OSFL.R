@@ -55,9 +55,10 @@ weather_data <- list.files(here("data", "weather_2020_2022_daily"),
 weather_data_cleaned <- weather_data %>%
   clean_names() %>%
   mutate(date = as_date(date_time),
-         yday = yday(date)) %>%
+         yday = yday(date),
+         year = year(date)) %>%
   filter(month(date) %in% 5:7) %>% # the same as the effort, from May to July
-  select(date, yday, max_temp_c, min_temp_c, mean_temp_c) 
+  select(date, year, yday, max_temp_c, min_temp_c, mean_temp_c) 
 
 
 
@@ -88,13 +89,6 @@ aru_daily <- detection_filtered %>%
 
 
 
-# visualization of daily detections across a year, across qualified sites. Note to be cautious in interpretation as the star date of ARUs differ across years and within years. 
-test <- aru_daily %>%
-  mutate(year = as.factor(year)) %>%
-  summarize(activity = n(), .by = c(yday, year)) %>%
-  ggplot(aes(x = yday, y = year, fill = activity, color = activity)) + 
-  geom_tile() +
-  facet_wrap(~year, ncol = 1, scales = "free_y")
 
 
 
@@ -198,11 +192,13 @@ daily_detection_cor <- daily_detection %>%
   group_nest(year) %>%
   mutate(cor = map(data, ~ cor(.x[5:8]))) 
 
-
-# visualization
+# visualization of daily detections across a year, across qualified sites. Note: interpret with caution as the number of ARUs differs across years in the same yday. 
 daily_detection_fig <- aru_daily %>%
+  summarize(activity = sum(detections), .by = c(yday, year)) %>%
+  
+  
+  left_join(weather_data_cleaned) %>%
   mutate(year = as_factor(year)) %>%
-  summarize(activity = n(), .by = c(yday, year)) %>%
   
   
   ggplot(aes(x = yday, fill = year)) +
