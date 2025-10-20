@@ -7,11 +7,17 @@
 
 
 # library -----------------------------------------------------------------
+
+# data wrangling
 library(tidyverse)
 library(here)
 library(janitor) # for clean_names
-library(lubridate)
 library(birdnetTools)
+
+# modelling
+library(lme4) # for glmer - basic poisson regression
+library(glmmTMB) # for glmmTMB - negative binomial regression
+library(datawizard)
 
 
 # bird data cleaning ------------------------------------------------------
@@ -88,22 +94,54 @@ aru_daily <- detection_filtered %>%
   arrange(site, year, yday)
 
 
+# # compute start and end dates for each ARU (site-year)
+# aru_boundaries <- aru_daily %>%
+#   group_by(site, year) %>%
+#   summarise(
+#     start_yday = min(yday, na.rm = TRUE),
+#     end_yday = max(yday, na.rm = TRUE),
+#     .groups = "drop"
+#   )
+
+
+# GLMM modelling ----------------------------------------------------------
+
+test <- aru_daily %>%
+  left_join(weather_data_cleaned) %>%
+  filter(detections != 0) %>%
+  mutate(year = as_factor(year),
+         yday_scaled = standardize(yday)) 
+
+# initial fit - variable scaling issue
+model0 <- glmer(detections ~ yday + (1|site) + (1|year),
+                data = test,
+                family = poisson)
+
+# fit with scaled yday - overdispersion issue
+model1 <- glmer(detections ~ yday_scaled + (1|year) + (1|site), 
+             data = test,
+             family = poisson)
+
+# fit to avoid dispersion
+model2 <- glmer(detections ~ yday_scaled + year + (1|site),
+                data = test,
+                family = poisson)
+
+model3 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
+                data = test,
+                family = nbinom2)
 
 
 
+model_nb <- glmmTMB(
+  detections ~ scale(yday) + (1|year) + (1 | site),
+  family = nbinom2,  # or nbinom1 (see below)
+  data = test
+)
 
 
-
-# compute start and end dates for each ARU (site-year)
-aru_boundaries <- aru_daily %>%
-  group_by(site, year) %>%
-  summarise(
-    start_yday = min(yday, na.rm = TRUE),
-    end_yday = max(yday, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-
+performance::check_overdispersion(model1)
+performance::check_model(model)
 
 
 
@@ -170,16 +208,6 @@ ggplot(aru_year, aes(x = yday, y = detections, fill = site)) +
     color = "Normal fit"
   ) +
   theme(legend.position = "none")
-
-
-
-
-
-
-
-
-
-
 
 
 
