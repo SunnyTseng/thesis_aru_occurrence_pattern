@@ -68,7 +68,7 @@ weather_data_cleaned <- weather_data %>%
 # qualified ARUs (site-year combinations) 
 qualified_ARUs <- bird_data_target_cleaned %>%
   group_by(site, year) %>%
-  filter(n_distinct(date) >= 20) %>%
+  filter(n_distinct(date) >= 1) %>%
   distinct(site, year)
 
 # effort data to fit the qualifed ARUs
@@ -85,6 +85,20 @@ aru_daily <- detection_filtered %>%
   full_join(effort_filtered, by = c("site", "date", "year", "yday")) %>%
   mutate(detections = replace_na(detections, 0)) %>%
   arrange(site, year, yday)
+
+
+
+# visualization of daily detections across a year, across qualified sites. Note to be cautious in interpretation as the star date of ARUs differ across years and within years. 
+test <- aru_daily %>%
+  mutate(year = as.factor(year)) %>%
+  summarize(activity = n(), .by = c(yday, year)) %>%
+  ggplot(aes(x = yday, y = year, fill = activity, color = activity)) + 
+  geom_tile() +
+  facet_wrap(~year, ncol = 1, scales = "free_y")
+
+
+
+
 
 # compute start and end dates for each ARU (site-year)
 aru_boundaries <- aru_daily %>%
@@ -179,23 +193,6 @@ ggplot(aru_year, aes(x = yday, y = detections, fill = site)) +
 
 # others ------------------------------------------------------------------
 
-
-## single site
-
-site_i <- "N_25"
-year_i <- 2020
-
-aru_daily %>%
-  filter(site == site_i, year == year_i) %>%
-  ggplot(aes(x = date, y = detections)) +
-  geom_col(fill = "steelblue") +
-  labs(title = paste("Daily detections for", site_i, "in", year_i),
-       x = "Date",
-       y = "Number of detections") +
-  theme_minimal()
-
-
-
 # correlation calculation
 daily_detection_cor <- daily_detection %>%
   group_nest(year) %>%
@@ -203,11 +200,13 @@ daily_detection_cor <- daily_detection %>%
 
 
 # visualization
-daily_detection_fig <- daily_detection %>%
-  mutate(year = year(date) %>% as_factor()) %>%
+daily_detection_fig <- aru_daily %>%
+  mutate(year = as_factor(year)) %>%
+  summarize(activity = n(), .by = c(yday, year)) %>%
+  
   
   ggplot(aes(x = yday, fill = year)) +
-  geom_bar(aes(y = detections_per_ARU),
+  geom_bar(aes(y = activity),
            stat = "identity",
            position = "identity") +
   geom_line(aes(y = mean_temp_c / 4),
