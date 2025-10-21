@@ -17,7 +17,10 @@ library(birdnetTools)
 # modelling
 library(lme4) # for glmer - basic poisson regression
 library(glmmTMB) # for glmmTMB - negative binomial regression
+library(gamm4) # for gamm4 - generalized additive mixed model
+
 library(datawizard)
+library(performance)
 
 
 # bird data cleaning ------------------------------------------------------
@@ -108,7 +111,6 @@ aru_daily <- detection_filtered %>%
 
 test <- aru_daily %>%
   left_join(weather_data_cleaned) %>%
-  filter(detections != 0) %>%
   mutate(year = as_factor(year),
          yday_scaled = standardize(yday)) 
 
@@ -128,21 +130,39 @@ model2 <- glmer(detections ~ yday_scaled + year + (1|site),
                 family = poisson)
 
 model3 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
+                  data = test,
+                  family = nbinom2)
+
+model4 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
                 data = test,
                 family = nbinom2)
 
+# fit to improve the zero-inflation - no need!
+model5 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
+                  ziformula = ~1,
+                  data = test,
+                  family = nbinom2)
+
+# fit to account for the population trend
+model6 <- glmmTMB(detections ~ poly(yday_scaled, 2) + (1|year) + (1|site),
+                            data = test,
+                            family = nbinom2)
+
+model7 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 5) + 
+                s(site, bs = "re"), 
+              data = test,
+              family = nb(),
+              method = 'REML')
+
+model8 <- gamm(detections ~ s(yday_scaled, bs = "cs", k = 5),
+              data = test,
+              family = poisson(),
+              random = list(site = ~1, year = ~1))
 
 
-model_nb <- glmmTMB(
-  detections ~ scale(yday) + (1|year) + (1 | site),
-  family = nbinom2,  # or nbinom1 (see below)
-  data = test
-)
 
-
-performance::check_overdispersion(model1)
-performance::check_model(model)
-
+performance::check_overdispersion(model8)
+performance::check_model(model8)
 
 
 # test methods to integrate the information across sites ------------------
@@ -221,6 +241,9 @@ daily_detection_cor <- daily_detection %>%
   mutate(cor = map(data, ~ cor(.x[5:8]))) 
 
 # visualization of daily detections across a year, across qualified sites. Note: interpret with caution as the number of ARUs differs across years in the same yday. 
+
+
+
 daily_detection_fig <- aru_daily %>%
   summarize(activity = sum(detections), .by = c(yday, year)) %>%
   
