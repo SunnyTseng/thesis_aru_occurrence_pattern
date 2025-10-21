@@ -107,12 +107,14 @@ aru_daily <- detection_filtered %>%
 #   )
 
 
-# GLMM modelling ----------------------------------------------------------
+
+# trend modelling GLMM and GAM --------------------------------------------
 
 test <- aru_daily %>%
-  left_join(weather_data_cleaned) %>%
+  #left_join(weather_data_cleaned) %>%
   mutate(year = as_factor(year),
-         yday_scaled = standardize(yday)) 
+         site = as_factor(site),
+         yday_scaled = scale(yday)) 
 
 # initial fit - variable scaling issue
 model0 <- glmer(detections ~ yday + (1|site) + (1|year),
@@ -124,7 +126,7 @@ model1 <- glmer(detections ~ yday_scaled + (1|year) + (1|site),
              data = test,
              family = poisson)
 
-# fit to avoid dispersion
+# fit to avoid dispersion - by using year in fixed effect, or change the family from poisson to NB
 model2 <- glmer(detections ~ yday_scaled + year + (1|site),
                 data = test,
                 family = poisson)
@@ -148,21 +150,122 @@ model6 <- glmmTMB(detections ~ poly(yday_scaled, 2) + (1|year) + (1|site),
                             data = test,
                             family = nbinom2)
 
-model7 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 5) + 
-                s(site, bs = "re"), 
+model7 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
+                s(year, bs = "re"), # model will have underdispersion if including site here
               data = test,
               family = nb(),
               method = 'REML')
 
-model8 <- gamm(detections ~ s(yday_scaled, bs = "cs", k = 5),
+model8 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
+                s(yday_scaled, year, bs = "re"),
               data = test,
-              family = poisson(),
-              random = list(site = ~1, year = ~1))
+              family = nb(),
+              method = 'REML')
+
+model9 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
+                s(year, bs = "re") +
+                s(yday_scaled, year, bs = "re"),
+              data = test,
+              family = nb(),
+              method = 'REML')
+
+
+performance::check_overdispersion(model6)
+performance::check_model(model9)
 
 
 
-performance::check_overdispersion(model8)
-performance::check_model(model8)
+
+# model visualization -----------------------------------------------------
+
+final_model <- model6 # model 6 or 9 are the best models
+
+# models for each year random effect
+final_model_vis <- test %>%
+  mutate(predicted_detections = predict(final_model, type = "response")) %>%
+  #filter(year == 2022) %>%
+  filter(site != "N_14", site != "14_41") %>% # remove sites that is outliers? 
+  
+  ggplot(aes(x = date)) + 
+  geom_point(aes(y = predicted_detections,
+                 colour = site)) +
+  # geom_line(aes(y = detections, 
+  #               group = site, 
+  #               colour = year),
+  #           linewidth = 1.2, alpha = 0.3) +
+  facet_wrap(~ year, ncol = 1, scale = "free")
+  
+  #scale_colour_manual(values = c("#eac435", "#345995", "#7bccc4"))
+
+final_model_vis
+
+# predict(final_model, type = "response", exclude = "s(year)")
+
+
+
+  ggplot(aes(x = yday, fill = year)) +
+  geom_bar(aes(y = activity),
+           stat = "identity",
+           position = "identity") +
+  geom_line(aes(y = mean_temp_c / 4),
+            colour = "#fb4d3d",
+            size = 1.5, 
+            alpha = 0.3) +
+  
+  facet_wrap(~ year, ncol = 1) +
+  labs(x = "Julian day") +
+  scale_y_continuous(name = "Detections per ARU",
+                     sec.axis = sec_axis(~.*4, name = "Mean temperature (degree C)")) +
+  scale_fill_manual(values = c("#eac435", "#345995", "#7bccc4")) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
+        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        legend.position = "none",
+        strip.text = element_text(size = 10))
+
+daily_detection_fig
+
+
+
+
+
+
+
+
+
+
+
+
+
+aru_daily %>%
+  group_by(year) %>%
+  summarize(mean(detections),
+            max(detections))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # test methods to integrate the information across sites ------------------
