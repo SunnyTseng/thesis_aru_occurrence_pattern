@@ -12,6 +12,7 @@ library(here)
 
 
 # daily pattern across years - exploratory visualization ------------------
+
 daily_detection_fig <- aru_daily %>%
   summarize(activity = sum(detections),
             no_ARUs = n_distinct(site),
@@ -49,3 +50,17 @@ daily_detection_fig <- aru_daily %>%
         strip.text = element_text(size = 10))
 
 daily_detection_fig
+
+
+
+# daily occupancy matrix --------------------------------------------------
+
+# # compute start and end dates for each ARU (site-year)
+# aru_boundaries <- aru_daily %>%
+#   group_by(site, year) %>%
+#   summarise(
+#     start_yday = min(yday, na.rm = TRUE),
+#     end_yday = max(yday, na.rm = TRUE),
+#     .groups = "drop"
+#   )
+

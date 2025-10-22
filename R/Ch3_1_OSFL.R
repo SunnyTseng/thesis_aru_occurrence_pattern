@@ -96,25 +96,20 @@ aru_daily <- detection_filtered %>%
   mutate(detections = replace_na(detections, 0)) %>%
   arrange(site, year, yday)
 
-
-# # compute start and end dates for each ARU (site-year)
-# aru_boundaries <- aru_daily %>%
-#   group_by(site, year) %>%
-#   summarise(
-#     start_yday = min(yday, na.rm = TRUE),
-#     end_yday = max(yday, na.rm = TRUE),
-#     .groups = "drop"
-#   )
+#save(aru_daily, file = here("data", "R_objects", "aru_daily_detections.rda"))
 
 
 
 # trend modelling GLMM and GAM --------------------------------------------
 
+load(here("data", "R_objects", "aru_daily_detections.rda"))
+
 test <- aru_daily %>%
   #left_join(weather_data_cleaned) %>%
   mutate(year = as_factor(year),
          site = as_factor(site),
-         yday_scaled = scale(yday)) 
+         yday_scaled = scale(yday),
+         yday_scaled_poly = poly(yday_scaled, 2)) 
 
 # initial fit - variable scaling issue
 model0 <- glmer(detections ~ yday + (1|site) + (1|year),
@@ -146,9 +141,25 @@ model5 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
                   family = nbinom2)
 
 # fit to account for the population trend
-model6 <- glmmTMB(detections ~ poly(yday_scaled, 2) + (1|year) + (1|site),
+model6 <- glmmTMB(detections ~ yday_scaled_poly + (1|year) + (1|site),
                             data = test,
                             family = nbinom2)
+
+# fit this to see the year by year variation
+model6_1 <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site),
+                    data = test,
+                    family = nbinom2)
+
+model6_2 <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site/year),
+                    data = test,
+                    family = nbinom2)
+
+model6_3 <- glmmTMB(detections ~ yday_scaled_poly*year + (1|site/year),
+                    data = test,
+                    family = nbinom2)
+
+
+
 
 model7 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
                 s(year, bs = "re"), # model will have underdispersion if including site here
@@ -170,7 +181,7 @@ model9 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
               method = 'REML')
 
 
-performance::check_overdispersion(model6)
+performance::check_overdispersion(model6_3)
 performance::check_model(model9)
 
 
@@ -178,61 +189,60 @@ performance::check_model(model9)
 
 # model visualization -----------------------------------------------------
 
-final_model <- model6 # model 6 or 9 are the best models
+final_model <- model6_3 # model 6 or 9 are the best models
 
 # models for each year random effect
 final_model_vis <- test %>%
-  mutate(predicted_subject = predict(final_model, type = "response", 
-                                    re.form = NULL),
-         predicted_main = predict(final_model, type = "response")) %>%
+  mutate(predicted_population = predict(final_model, type = "response")) %>%
+         #predicted_subject = predict(final_model, type = "response")) %>%
   #filter(year == 2022) %>%
-  filter(site != "N_14", site != "14_41") %>% # remove sites that is outliers? 
+  #filter(site != "N_14", site != "14_41") %>% # remove sites that is outliers? 
   
-  ggplot(aes(x = date)) + 
-  geom_point(aes(y = predicted_subject,
+  ggplot(aes(x = yday)) + 
+  geom_point(aes(y = predicted_population,
                  colour = site)) +
   # geom_line(aes(y = detections, 
   #               group = site, 
   #               colour = year),
   #           linewidth = 1.2, alpha = 0.3) +
-  facet_wrap(~ year, ncol = 1, scale = "free")
+  facet_wrap(~ year, ncol = 1)
   
   #scale_colour_manual(values = c("#eac435", "#345995", "#7bccc4"))
 
 final_model_vis
 
-# predict(final_model, type = "response", exclude = "s(year)")
 
 
 
-  ggplot(aes(x = yday, fill = year)) +
-  geom_bar(aes(y = activity),
-           stat = "identity",
-           position = "identity") +
-  geom_line(aes(y = mean_temp_c / 4),
-            colour = "#fb4d3d",
-            size = 1.5, 
-            alpha = 0.3) +
-  
-  facet_wrap(~ year, ncol = 1) +
-  labs(x = "Julian day") +
-  scale_y_continuous(name = "Detections per ARU",
-                     sec.axis = sec_axis(~.*4, name = "Mean temperature (degree C)")) +
-  scale_fill_manual(values = c("#eac435", "#345995", "#7bccc4")) +
-  theme_bw() +
-  theme(axis.title = element_text(size = 16),
-        axis.text = element_text(size = 12),
-        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
-        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
-        legend.title = element_blank(),
-        legend.text = element_text(size = 14),
-        legend.position = "none",
-        strip.text = element_text(size = 10))
+# fit candidates
+model0 <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site),
+                  data = test, family = nbinom2)
 
-daily_detection_fig
+model_slope <- glmmTMB(detections ~ yday_scaled_poly + year + (1 + year|site),
+                       data = test, family = nbinom2)
+
+model_siteyear <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site) + (1|site:year),
+                          data = test, family = nbinom2)
+
+model_yearRE <- glmmTMB(detections ~ yday_scaled_poly + year + (1|year) + (1|site),
+                        data = test, family = nbinom2)
 
 
+library(MuMIn)
+AICc(model0, model_slope, model_siteyear, model_yearRE)
 
+# nested LRT (if appropriate)
+anova(model0, model_slope)         # check LRT
+anova(model0, model_siteyear)      # etc.
+
+# check variance components & R2
+VarCorr(model_slope)
+library(performance)
+r2(model0); r2(model_slope)
+
+# residual diagnostics
+library(DHARMa)
+plot(simulateResiduals(model_slope))
 
 
 
@@ -340,48 +350,6 @@ ggplot(aru_year, aes(x = yday, y = detections, fill = site)) +
 
 # others ------------------------------------------------------------------
 
-# correlation calculation
-daily_detection_cor <- daily_detection %>%
-  group_nest(year) %>%
-  mutate(cor = map(data, ~ cor(.x[5:8]))) 
-
-# visualization of daily detections across a year, across qualified sites. Note: interpret with caution as the number of ARUs differs across years in the same yday. 
-
-
-
-daily_detection_fig <- aru_daily %>%
-  summarize(activity = sum(detections), .by = c(yday, year)) %>%
-  
-  
-  left_join(weather_data_cleaned) %>%
-  mutate(year = as_factor(year)) %>%
-  
-  
-  ggplot(aes(x = yday, fill = year)) +
-  geom_bar(aes(y = activity),
-           stat = "identity",
-           position = "identity") +
-  geom_line(aes(y = mean_temp_c / 4),
-            colour = "#fb4d3d",
-            size = 1.5, 
-            alpha = 0.3) +
-  
-  facet_wrap(~ year, ncol = 1) +
-  labs(x = "Julian day") +
-  scale_y_continuous(name = "Detections per ARU",
-                     sec.axis = sec_axis(~.*4, name = "Mean temperature (degree C)")) +
-  scale_fill_manual(values = c("#eac435", "#345995", "#7bccc4")) +
-  theme_bw() +
-  theme(axis.title = element_text(size = 16),
-        axis.text = element_text(size = 12),
-        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
-        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
-        legend.title = element_blank(),
-        legend.text = element_text(size = 14),
-        legend.position = "none",
-        strip.text = element_text(size = 10))
-
-daily_detection_fig
 
 
 
