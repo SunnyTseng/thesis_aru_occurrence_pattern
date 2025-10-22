@@ -38,6 +38,8 @@ bird_data_target_cleaned <- bird_data_target %>%
   mutate(site = str_split_i(filepath, pattern = "\\\\", i = -2)) %>%
   select(site, date, year, yday, start, end)
   
+#save(bird_data_target_cleaned, file = here("data", "R_objects", "bird_data_target_cleaned.rda"))
+
 
 # effort data cleaning ----------------------------------------------------
 
@@ -50,6 +52,9 @@ effort_daily <- effort_eval_1 %>%
          year = year(datetime),
          yday = yday(datetime)) %>%
   distinct(site, date, year, yday)
+
+#save(effort_daily, file = here("data", "R_objects", "effort_daily.rda"))
+
 
 
 # weather data cleaning ---------------------------------------------------
@@ -69,17 +74,23 @@ weather_data_cleaned <- weather_data %>%
   filter(month(date) %in% 5:7) %>% # the same as the effort, from May to July
   select(date, year, yday, max_temp_c, min_temp_c, mean_temp_c) 
 
-
+#save(weather_data_cleaned, file = here("data", "R_objects", "weather_data_cleaned.rda"))
 
 
 
 # check the temporal change of the detections -----------------------------
 
-# qualified ARUs (site-year combinations) 
 qualified_ARUs <- bird_data_target_cleaned %>%
+  arrange(site, year, date) %>%  # ensure sorted by time
   group_by(site, year) %>%
-  filter(n_distinct(date) >= 1) %>%
-  distinct(site, year)
+  # compute the difference (in days) between consecutive detections
+  mutate(day_diff = as.numeric(difftime(date, lag(date), units = "days"))) %>%
+  # flag if any consecutive detection days differ by exactly 1
+  summarize(has_consecutive = any(day_diff == 1, na.rm = TRUE),
+            .groups = "drop") %>%
+  # keep only those with at least one consecutive pair
+  filter(has_consecutive) %>%
+  select(site, year) 
 
 # effort data to fit the qualifed ARUs
 effort_filtered <- effort_daily %>%
@@ -94,7 +105,7 @@ detection_filtered <- bird_data_target_cleaned %>%
 aru_daily <- detection_filtered %>%
   full_join(effort_filtered, by = c("site", "date", "year", "yday")) %>%
   mutate(detections = replace_na(detections, 0)) %>%
-  arrange(site, year, yday)
+  arrange(site, year, yday) 
 
 #save(aru_daily, file = here("data", "R_objects", "aru_daily_detections.rda"))
 
@@ -181,7 +192,7 @@ model9 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
               method = 'REML')
 
 
-performance::check_overdispersion(model6_3)
+performance::check_overdispersion(model6_2)
 performance::check_model(model9)
 
 
@@ -253,102 +264,9 @@ plot(simulateResiduals(model_slope))
 
 
 
-aru_daily %>%
-  group_by(year) %>%
-  summarize(mean(detections),
-            max(detections))
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# test methods to integrate the information across sites ------------------
-
-# quick comparison
-year_i <- 2020
-
-aru_year <- aru_daily %>%
-  filter(year == year_i)
-
-aru_boundaries_year <- aru_boundaries %>%
-  filter(year == year_i)
-
-# compute mean/sd per ARU (weighted by detections)
-aru_norm <- aru_year %>%
-  group_by(site) %>%
-  summarise(
-    mu = weighted.mean(yday, detections, na.rm = TRUE),
-    sigma = sqrt(weighted.mean((yday - mu)^2, detections, na.rm = TRUE))
-  )
-
-# generate smooth normal curves per site
-fit_curves <- aru_norm %>%
-  group_by(site) %>%
-  summarise(
-    yday = seq(100, 250, by = 1),  # or range(aru_year$yday)
-    detections_fit = dnorm(yday, mu, sigma)
-  ) %>%
-  group_by(site) %>%
-  mutate(detections_fit = detections_fit / max(detections_fit) * 
-           max(aru_year$detections[aru_year$site == first(site)]))
-
-# combine with barplot
-# plot
-ggplot(aru_year, aes(x = yday, y = detections, fill = site)) +
-  geom_col(alpha = 0.3, position = "identity") +
-  geom_line(data = fit_curves, aes(x = yday, y = detections_fit, color = site), size = 1) +
-  
-  # add start and end boundaries
-  geom_vline(
-    data = aru_boundaries_year,
-    aes(xintercept = start_yday),
-    linetype = "dashed",
-    color = "black",
-    linewidth = 0.6
-  ) +
-  geom_vline(
-    data = aru_boundaries_year,
-    aes(xintercept = end_yday),
-    linetype = "dashed",
-    color = "black",
-    linewidth = 0.6
-  ) +
-  
-  facet_grid(site ~ .) +
-  xlim(125, 225) +
-  theme_minimal() +
-  labs(
-    title = paste("Daily detections and normal fits per ARU (", year_i, ")", sep = ""),
-    x = "Day of Year",
-    y = "Detections",
-    fill = "Site",
-    color = "Normal fit"
-  ) +
-  theme(legend.position = "none")
-
-
-
-
-
-# others ------------------------------------------------------------------
 
 
 
