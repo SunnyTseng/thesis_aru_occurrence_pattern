@@ -182,12 +182,14 @@ final_model <- model6 # model 6 or 9 are the best models
 
 # models for each year random effect
 final_model_vis <- test %>%
-  mutate(predicted_detections = predict(final_model, type = "response")) %>%
+  mutate(predicted_subject = predict(final_model, type = "response", 
+                                    re.form = NULL),
+         predicted_main = predict(final_model, type = "response")) %>%
   #filter(year == 2022) %>%
   filter(site != "N_14", site != "14_41") %>% # remove sites that is outliers? 
   
   ggplot(aes(x = date)) + 
-  geom_point(aes(y = predicted_detections,
+  geom_point(aes(y = predicted_subject,
                  colour = site)) +
   # geom_line(aes(y = detections, 
   #               group = site, 
