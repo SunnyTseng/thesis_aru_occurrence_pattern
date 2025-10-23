@@ -31,18 +31,20 @@ load(here("data", "R_objects", "aru_daily_detections.rda"))
 
 # daily occupancy matrix --------------------------------------------------
 
-# check OSFL detection (1 or 0)
+# wrangle data - check OSFL detection (1 or 0)
 full_aru_daily <- bird_data_target_cleaned %>%
   count(site, date, year, yday, name = "detections") %>%
   right_join(effort_daily, by = c("site", "date", "year", "yday")) %>%
-  mutate(detections = replace_na(detections, 0))
+  mutate(detections = replace_na(detections, 0)) 
 
 
 # visualization 
 full_aru_daily_vis <- full_aru_daily %>%
   
   # main plot
-  ggplot(aes(x = date, y = site, fill = detections)) +
+  ggplot(aes(x = date, 
+             y = fct_reorder(site, desc(detections), .fun = sum), 
+             fill = detections)) +
   geom_tile() + 
   
   # fine tune
