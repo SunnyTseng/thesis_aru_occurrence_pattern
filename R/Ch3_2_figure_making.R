@@ -6,6 +6,7 @@
 
 # library -----------------------------------------------------------------
 
+# general data wrangling
 library(tidyverse)
 library(here)
 
@@ -30,58 +31,49 @@ load(here("data", "R_objects", "aru_daily_detections.rda"))
 
 # daily occupancy matrix --------------------------------------------------
 
-OSFL_occ_0 <- bird_data_target_cleaned %>%
-  
-  # check OSFL detection (1 or 0)
-  count(site, date, year, yday, name = "detections_daily") %>%
-  full_join(effort_daily, by = c("site", "date", "year", "yday")) %>%
-  mutate(detections_daily = if_else(is.na(detections_daily), 0, 1)) %>%
-  
-  # check OSFL detections (NA or keep original value)
-  pivot_wider(id_cols = site,
-              names_from = date,
-              values_from = detections_daily) 
+# check OSFL detection (1 or 0)
+full_aru_daily <- bird_data_target_cleaned %>%
+  count(site, date, year, yday, name = "detections") %>%
+  right_join(effort_daily, by = c("site", "date", "year", "yday")) %>%
+  mutate(detections = replace_na(detections, 0))
 
 
 # visualization 
-OSFL_vis <- OSFL_occ_0 %>%
-  pivot_longer(-site, names_to = "period", values_to = "detections_daily") %>%
-  mutate(detections_daily = replace_na(detections_daily, -1),
-         period = ymd(period),
-         year = year(period)) %>%
-  # plot
-  ggplot(aes(x = period, y = site, fill = factor(detections_daily))) +
-  geom_tile() + 
-  scale_fill_manual(values = c("white", "lightsteelblue1", "darkslategrey")) +
-  facet_wrap(~ year, scales = "free_x") + 
+full_aru_daily_vis <- full_aru_daily %>%
   
+  # main plot
+  ggplot(aes(x = date, y = site, fill = detections)) +
+  geom_tile() + 
+  
+  # fine tune
+  scale_fill_gradientn(colours = c("lightgrey", brewer.pal(9, "YlGnBu")),
+                       values = scales::rescale(c(0, 0.01, max(full_aru_daily$detections, na.rm = TRUE))),
+                       name = "No. daily detections",
+                       guide = guide_colorbar(barwidth = 25, 
+                                              barheight = 0.8,
+                                              title.vjust = 1.1)) +
+  facet_wrap(~ year, scales = "free_x") +   
   scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
                date_labels = "%b%d") +
   scale_y_discrete(guide = guide_axis(n.dodge = 2)) +
   
+  # theme setting
   theme_bw() +
-  labs(x = "Date", y = "Site") +
-  theme(legend.position = "none",
+  labs(x = "Date", y = "ARU site") +
+  theme(legend.position = "bottom",
         strip.background = element_rect(fill = "azure3"),
         strip.text.x = element_text(size = 12),
-        
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 10),
         axis.title = element_text(size = 16),
         axis.text = element_text(size = 12),
+        axis.text.y = element_blank(),
         axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0)),
         axis.title.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0)))
 
-OSFL_vis
+full_aru_daily_vis
 
 
-
-# # compute start and end dates for each ARU (site-year)
-# aru_boundaries <- aru_daily %>%
-#   group_by(site, year) %>%
-#   summarise(
-#     start_yday = min(yday, na.rm = TRUE),
-#     end_yday = max(yday, na.rm = TRUE),
-#     .groups = "drop"
-#   )
 
 
 
@@ -131,3 +123,13 @@ daily_detection_fig
 
 
 
+# others ------------------------------------------------------------------
+
+# # compute start and end dates for each ARU (site-year)
+# aru_boundaries <- aru_daily %>%
+#   group_by(site, year) %>%
+#   summarise(
+#     start_yday = min(yday, na.rm = TRUE),
+#     end_yday = max(yday, na.rm = TRUE),
+#     .groups = "drop"
+#   )
