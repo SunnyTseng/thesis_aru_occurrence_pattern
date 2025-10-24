@@ -15,9 +15,12 @@ library(janitor) # for clean_names
 library(birdnetTools)
 
 # modelling
-library(lme4) # for glmer - basic poisson regression
-library(glmmTMB) # for glmmTMB - negative binomial regression
-library(gamm4) # for gamm4 - generalized additive mixed model
+library(lme4) # for glm modelling, glmer - basic poisson regression
+library(glmmTMB) # for glmm with flexible family, glmmTMB - negative binomial regression
+library(gamm4) # for gam mixed effect modelling, gamm4 - generalized additive mixed model
+library(splines) # for spline modelling
+library(mgcv) # for gam modelling
+
 
 library(datawizard)
 library(performance)
@@ -115,98 +118,78 @@ aru_daily <- detection_filtered %>%
 
 load(here("data", "R_objects", "aru_daily_detections.rda"))
 
-test <- aru_daily %>%
-  #left_join(weather_data_cleaned) %>%
+model_data <- aru_daily %>%
   mutate(year = as_factor(year),
          site = as_factor(site),
+         yday_poly = poly(yday, 2, raw = TRUE),
          yday_scaled = scale(yday),
-         yday_scaled_poly = poly(yday_scaled, 2)) 
+         yday_scaled_poly = poly(yday_scaled, 2, raw = TRUE))
+
 
 # initial fit - variable scaling issue
-model0 <- glmer(detections ~ yday + (1|site) + (1|year),
-                data = test,
-                family = poisson)
+model_0 <- glmer(detections ~ yday * year + (1|site),
+                 data = model_data,
+                 family = poisson)
 
 # fit with scaled yday - overdispersion issue
-model1 <- glmer(detections ~ yday_scaled + (1|year) + (1|site), 
-             data = test,
-             family = poisson)
+model_1 <- glmer(detections ~ yday_scaled * year+ (1|site),
+                 data = model_data,
+                 family = poisson)
 
-# fit to avoid dispersion - by using year in fixed effect, or change the family from poisson to NB
-model2 <- glmer(detections ~ yday_scaled + year + (1|site),
-                data = test,
-                family = poisson)
-
-model3 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
-                  data = test,
-                  family = nbinom2)
-
-model4 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
-                data = test,
-                family = nbinom2)
+# fit to avoid dispersion - by changing the family from poisson to NB
+model_2 <- glmmTMB(detections ~ yday_scaled * year + (1|site),
+                   data = model_data,
+                   family = nbinom2)
 
 # fit to improve the zero-inflation - no need!
-model5 <- glmmTMB(detections ~ yday_scaled + (1|year) + (1|site),
-                  ziformula = ~1,
-                  data = test,
-                  family = nbinom2)
+model_3 <- glmmTMB(detections ~ yday_scaled * year + (1|site),
+                   ziformula =~ 1,
+                   data = model_data,
+                   family = nbinom2)
 
 # fit to account for the population trend
-model6 <- glmmTMB(detections ~ yday_scaled_poly + (1|year) + (1|site),
-                            data = test,
+  # 1.poly solution
+model_4 <- glmmTMB(detections ~ yday_scaled_poly * year + (1|site),
+                            data = model_data,
                             family = nbinom2)
 
-# fit this to see the year by year variation
-model6_1 <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site),
-                    data = test,
-                    family = nbinom2)
+  # 2.spline solution
+model_glmm_1 <- glmmTMB(detections ~ bs(yday, df = 6) * year + (1 | site),
+                        data = model_data, 
+                        family = poisson)
 
-model6_2 <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site/year),
-                    data = test,
-                    family = nbinom2)
+model_glmm_2 <- glmmTMB(detections ~ bs(yday, df = 6) * year + (1 | site),
+                        data = model_data, 
+                        family = nbinom2)
 
-model6_3 <- glmmTMB(detections ~ yday_scaled_poly*year + (1|site/year),
-                    data = test,
-                    family = nbinom2)
+  # 3.GAM solution
+model_gam_1 <- gam(detections ~ s(yday, bs = "cc", by = year) + s(site, bs = "re"),
+                   family = poisson(),             # negative binomial, mgcv estimates theta
+                   data = model_data,
+                   method = "REML")
 
+model_gam_2 <- gam(detections ~ s(yday, bs = "cc", by = year) + s(site, bs = "re"),
+                   family = quasipoisson(),             # negative binomial, mgcv estimates theta
+                   data = model_data,
+                   method = "REML")
 
+model_gam_3 <- gam(detections ~ s(yday, bs = "cc", by = year) + s(site, bs = "re"),
+                   family = nb(),             # negative binomial, mgcv estimates theta
+                   data = model_data,
+                   method = "REML")
 
-
-model7 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
-                s(year, bs = "re"), # model will have underdispersion if including site here
-              data = test,
-              family = nb(),
-              method = 'REML')
-
-model8 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
-                s(yday_scaled, year, bs = "re"),
-              data = test,
-              family = nb(),
-              method = 'REML')
-
-model9 <- gam(detections ~ s(yday_scaled, bs = "cs", k = 3) +
-                s(year, bs = "re") +
-                s(yday_scaled, year, bs = "re"),
-              data = test,
-              family = nb(),
-              method = 'REML')
-
-
-performance::check_overdispersion(model6_2)
-performance::check_model(model9)
-
+performance::check_overdispersion(model_5)
+performance::check_model(model_5)
 
 
 
 # model visualization -----------------------------------------------------
 
-final_model <- model6_3 # model 6 or 9 are the best models
+final_model <- model_gam_3 # model 6 or 9 are the best models
 
 # models for each year random effect
-final_model_vis <- test %>%
-  mutate(predicted_population = predict(final_model, type = "response")) %>%
-         #predicted_subject = predict(final_model, type = "response")) %>%
-  #filter(year == 2022) %>%
+final_model_vis <- model_data %>%
+  mutate(predicted_population = predict(final_model, type = "response"), exclude = "s(site)") %>%
   #filter(site != "N_14", site != "14_41") %>% # remove sites that is outliers? 
   
   ggplot(aes(x = yday)) + 
@@ -217,7 +200,6 @@ final_model_vis <- test %>%
   #               colour = year),
   #           linewidth = 1.2, alpha = 0.3) +
   facet_wrap(~ year, ncol = 1)
-  
   #scale_colour_manual(values = c("#eac435", "#345995", "#7bccc4"))
 
 final_model_vis
@@ -225,43 +207,24 @@ final_model_vis
 
 
 
-# fit candidates
-model0 <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site),
-                  data = test, family = nbinom2)
+# Create a new dataframe for prediction — one sequence of yday per year
+newdat <- model_data %>%
+  dplyr::distinct(year) %>%
+  tidyr::crossing(yday = seq(min(model_data$yday),
+                             max(model_data$yday),
+                             length.out = 200))
 
-model_slope <- glmmTMB(detections ~ yday_scaled_poly + year + (1 + year|site),
-                       data = test, family = nbinom2)
+# Predict population-level (exclude site random effects)
+newdat$pred <- predict(final_model, newdata = newdat, type = "response", exclude = "s(site)")
 
-model_siteyear <- glmmTMB(detections ~ yday_scaled_poly + year + (1|site) + (1|site:year),
-                          data = test, family = nbinom2)
-
-model_yearRE <- glmmTMB(detections ~ yday_scaled_poly + year + (1|year) + (1|site),
-                        data = test, family = nbinom2)
-
-
-library(MuMIn)
-AICc(model0, model_slope, model_siteyear, model_yearRE)
-
-# nested LRT (if appropriate)
-anova(model0, model_slope)         # check LRT
-anova(model0, model_siteyear)      # etc.
-
-# check variance components & R2
-VarCorr(model_slope)
-library(performance)
-r2(model0); r2(model_slope)
-
-# residual diagnostics
-library(DHARMa)
-plot(simulateResiduals(model_slope))
-
-
-
-
-
-
-
-
+# Plot: one smooth per year
+ggplot(newdat, aes(x = yday, y = pred, color = year)) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~ year, ncol = 1, scales = "free_y") +
+  labs(y = "Predicted detections (population-level)",
+       x = "Day of Year",
+       title = "Seasonal activity patterns by year (aggregated across sites)") +
+  theme_minimal(base_size = 14)
 
 
 

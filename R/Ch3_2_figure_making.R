@@ -54,10 +54,9 @@ full_aru_daily_vis <- full_aru_daily %>%
                        guide = guide_colorbar(barwidth = 25, 
                                               barheight = 0.8,
                                               title.vjust = 1.1)) +
-  facet_wrap(~ year, scales = "free_x") +   
+  facet_wrap(~ year, scale = "free_x") +   
   scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
-               date_labels = "%b%d") +
-  scale_y_discrete(guide = guide_axis(n.dodge = 2)) +
+               date_labels = "%m/%d") +
   
   # theme setting
   theme_bw() +
@@ -75,7 +74,12 @@ full_aru_daily_vis <- full_aru_daily %>%
 
 full_aru_daily_vis
 
-
+ggsave(plot = full_aru_daily_vis,
+       filename = here("docs", "figures", "full_aru_daily_vis.png"),
+       width = 28,
+       height = 16,
+       units = "cm",
+       dpi = 300)
 
 
 
@@ -91,26 +95,23 @@ daily_detection_fig <- aru_daily %>%
   mutate(no_OSFL_ARUs = total_ARUs - OSFL_ARUs) %>%
   pivot_longer(cols = c(OSFL_ARUs, no_OSFL_ARUs), names_to = "ARU_type") %>%
   
-  # cleaning before sending to plot
-  # left_join(weather_data_cleaned) %>%
-  # mutate(year = as_factor(year),
-  #        activity_daily = no_OSFL_ARUs / no_ARUs) %>%
-  
   # make the plot
   ggplot(aes(x = yday, fill = ARU_type)) +
   geom_bar(aes(y = value),
            stat = "identity",
-           position = "fill") +
-  # geom_line(aes(y = mean_temp_c / 40),
-  #           colour = "#fb4d3d",
-  #           size = 1.5, 
-  #           alpha = 0.3) +
+           position = "fill",
+           width = 1,
+           alpha = 0.8) +
   
-  facet_wrap(~ year, ncol = 1, scale = "free_y") +
-  labs(x = "Julian day") +
-  # scale_y_continuous(name = "Daily detections per ARU",
-  #                    sec.axis = sec_axis(~.*40, name = "Mean temperature (degree C)")) +
-  scale_fill_manual(values = c("#eac435", "#345995", "#7bccc4")) +
+  # fine-tune
+  facet_wrap(~ year, ncol = 1) +
+  labs(x = "Julian day", y = "Proportion of qualified ARUs") +
+  scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
+               date_labels = "%b%d") +
+  scale_fill_manual(values = c("#7bccc4", "#345995"),
+                    labels = c("OSFL absent", "OSFL present")) +
+  
+  # theme
   theme_bw() +
   theme(axis.title = element_text(size = 16),
         axis.text = element_text(size = 12),
@@ -118,10 +119,18 @@ daily_detection_fig <- aru_daily %>%
         axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
         legend.title = element_blank(),
         legend.text = element_text(size = 14),
-        legend.position = "none",
+        legend.position = c(0.12, 0.92),
         strip.text = element_text(size = 10))
 
 daily_detection_fig
+
+
+ggsave(plot = daily_detection_fig,
+       filename = here("docs", "figures", "daily_detection_fig.png"),
+       width = 28,
+       height = 16,
+       units = "cm",
+       dpi = 300)
 
 
 
