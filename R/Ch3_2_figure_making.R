@@ -109,7 +109,7 @@ daily_detection_fig <- aru_daily %>%
   
   # fine-tune
   facet_wrap(~ year, ncol = 1) +
-  labs(x = "Julian day", y = "Proportion of qualified ARUs") +
+  labs(x = "Date", y = "Proportion of qualified ARUs") +
   scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
                date_labels = "%b%d") +
   scale_fill_manual(values = c("#7bccc4", "#345995"),
@@ -117,21 +117,24 @@ daily_detection_fig <- aru_daily %>%
   
   # theme
   theme_bw() +
-  theme(axis.title = element_text(size = 16),
+  theme(strip.background = element_rect(fill = "azure3"),
+        strip.text = element_text(size = 10),
+        
+        axis.title = element_text(size = 16),
         axis.text = element_text(size = 12),
         axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
         axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
+        
         legend.title = element_blank(),
         legend.text = element_text(size = 14),
-        legend.position = c(0.12, 0.92),
-        strip.text = element_text(size = 10))
+        legend.position = c(0.12, 0.92))
 
 daily_detection_fig
 
 
 ggsave(plot = daily_detection_fig,
        filename = here("docs", "figures", "daily_detection_fig.png"),
-       width = 28,
+       width = 26,
        height = 16,
        units = "cm",
        dpi = 300)
