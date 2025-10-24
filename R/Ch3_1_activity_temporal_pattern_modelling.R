@@ -178,6 +178,26 @@ model_gam_3 <- gam(detections ~ s(yday, bs = "cc", by = year) + s(site, bs = "re
                    data = model_data,
                    method = "REML")
 
+
+model_single <- gam(detections ~ s(yday, bs = "cc") + s(site, bs = "re"),
+                    family = nb(),
+                    data = model_data,
+                    method = "REML")
+
+
+
+
+
+# model goodness of fit check ---------------------------------------------
+
+final_model <- model_gam_3 # model 6 or 9 are the best models
+
+
+gam.check(final_model)
+
+summary(final_model)
+
+
 performance::check_overdispersion(model_5)
 performance::check_model(model_5)
 
@@ -185,20 +205,37 @@ performance::check_model(model_5)
 
 # model visualization -----------------------------------------------------
 
-final_model <- model_gam_3 # model 6 or 9 are the best models
 
 # models for each year random effect
 final_model_vis <- model_data %>%
-  mutate(predicted_population = predict(final_model, type = "response"), exclude = "s(site)") %>%
-  #filter(site != "N_14", site != "14_41") %>% # remove sites that is outliers? 
+  mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
+  group_by(year, site) %>%
+  mutate(detections_scaled = detections / max(detections, na.rm = TRUE) * max(predicted_population, na.rm = TRUE)) %>%
+  ungroup() %>%
+  
+  ggplot(aes(x = yday)) + 
+  geom_point(aes(y = detections_scaled, group = site, colour = year),
+            size = 1, alpha = 0.5) +
+  geom_line(aes(y = predicted_population, colour = "Population"), linewidth = 1.5) +
+  facet_wrap(~ year, ncol = 1, scale = "free_y") +
+  theme_bw() +
+  labs(y = "Detections (scaled)", x = "Day of Year") +
+  scale_colour_manual(values = c("Population" = "black", "2020" = "#eac435", "2021" = "#345995", "2022" = "#7bccc4"))
+
+
+
+
+  
+  mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
   
   ggplot(aes(x = yday)) + 
   geom_point(aes(y = predicted_population,
                  colour = site)) +
-  # geom_line(aes(y = detections, 
-  #               group = site, 
-  #               colour = year),
-  #           linewidth = 1.2, alpha = 0.3) +
+  geom_line(aes(y = detections,
+                group = site,
+                colour = year),
+            linewidth = 1.2, alpha = 0.3) +
+  
   facet_wrap(~ year, ncol = 1)
   #scale_colour_manual(values = c("#eac435", "#345995", "#7bccc4"))
 
