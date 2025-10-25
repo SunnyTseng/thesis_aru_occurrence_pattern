@@ -20,10 +20,10 @@ library(glmmTMB) # for glmm with flexible family, glmmTMB - negative binomial re
 library(gamm4) # for gam mixed effect modelling, gamm4 - generalized additive mixed model
 library(splines) # for spline modelling
 library(mgcv) # for gam modelling
+library(performance) # for model evaluation
 
-
+# date time manipulation 
 library(datawizard)
-library(performance)
 
 
 # bird data cleaning ------------------------------------------------------
@@ -192,22 +192,16 @@ model_single <- gam(detections ~ s(yday, bs = "cc") + s(site, bs = "re"),
 
 final_model <- model_gam_3 # model 6 or 9 are the best models
 
-
 gam.check(final_model)
-
 summary(final_model)
-
-
-performance::check_overdispersion(model_5)
-performance::check_model(model_5)
-
 
 
 # model visualization -----------------------------------------------------
 
+# curves for each year
+final_model <- model_gam_3 
 
-# models for each year random effect
-final_model_vis <- model_data %>%
+model_vis <- model_data %>%
   mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
   group_by(year, site) %>%
   mutate(detections_scaled = detections / max(detections, na.rm = TRUE) * max(predicted_population, na.rm = TRUE)) %>%
@@ -222,24 +216,29 @@ final_model_vis <- model_data %>%
   labs(y = "Detections (scaled)", x = "Day of Year") +
   scale_colour_manual(values = c("Population" = "black", "2020" = "#eac435", "2021" = "#345995", "2022" = "#7bccc4"))
 
-
-
-
   
-  mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
-  
-  ggplot(aes(x = yday)) + 
-  geom_point(aes(y = predicted_population,
-                 colour = site)) +
-  geom_line(aes(y = detections,
-                group = site,
-                colour = year),
-            linewidth = 1.2, alpha = 0.3) +
-  
-  facet_wrap(~ year, ncol = 1)
+  # mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
+  # 
+  # ggplot(aes(x = yday)) + 
+  # geom_point(aes(y = predicted_population,
+  #                colour = site)) +
+  # geom_line(aes(y = detections,
+  #               group = site,
+  #               colour = year),
+  #           linewidth = 1.2, alpha = 0.3) +
+  # 
+  # facet_wrap(~ year, ncol = 1)
   #scale_colour_manual(values = c("#eac435", "#345995", "#7bccc4"))
 
-final_model_vis
+model_vis
+
+
+ggsave(plot = final_model_vis,
+       filename = here("docs", "figures", "model_vis.png"),
+       width = 20,
+       height = 28,
+       units = "cm",
+       dpi = 300)
 
 
 

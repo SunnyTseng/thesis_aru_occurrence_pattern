@@ -91,7 +91,7 @@ ggsave(plot = full_aru_daily_vis,
 
 # daily pattern across years - exploratory visualization ------------------
 
-daily_detection_fig <- aru_daily %>%
+aru_proportion_vis <- aru_daily %>%
   summarize(activity = sum(detections),
             total_ARUs = n_distinct(site),
             OSFL_ARUs = n_distinct(site[detections != 0]),
@@ -129,11 +129,11 @@ daily_detection_fig <- aru_daily %>%
         legend.text = element_text(size = 14),
         legend.position = c(0.12, 0.92))
 
-daily_detection_fig
+aru_proportion_vis
 
 
-ggsave(plot = daily_detection_fig,
-       filename = here("docs", "figures", "daily_detection_fig.png"),
+ggsave(plot = aru_proportion_vis,
+       filename = here("docs", "figures", "aru_proportion_vis.png"),
        width = 26,
        height = 16,
        units = "cm",
