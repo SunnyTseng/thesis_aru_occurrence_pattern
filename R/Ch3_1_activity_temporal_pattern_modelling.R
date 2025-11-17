@@ -28,64 +28,68 @@ library(datawizard)
 
 # bird data cleaning ------------------------------------------------------
 
-# bird detections from 3 years of data
-bird_data <- birdnet_combine(here("data", "audio_output_combined"))
-
-# keep only Olive-sided Flycatcher and valid detections
-bird_data_target <- bird_data %>%
-  birdnet_filter(species = "Olive-sided Flycatcher", threshold = 0.35)
-
-# mutate site and recording, and other necessary columns
-bird_data_target_cleaned <- bird_data_target %>%
-  birdnet_add_datetime() %>%
-  mutate(site = str_split_i(filepath, pattern = "\\\\", i = -2)) %>%
-  select(site, date, year, yday, start, end)
+# # bird detections from 3 years of data
+# bird_data <- birdnet_combine(here("data", "audio_output_combined"))
+# 
+# # keep only Olive-sided Flycatcher and valid detections
+# bird_data_target <- bird_data %>%
+#   birdnet_filter(species = "Olive-sided Flycatcher", threshold = 0.35)
+# 
+# # mutate site and recording, and other necessary columns
+# bird_data_target_cleaned <- bird_data_target %>%
+#   birdnet_add_datetime() %>%
+#   mutate(site = str_split_i(filepath, pattern = "\\\\", i = -2)) %>%
+#   select(site, date, year, yday, start, end)
   
 #save(bird_data_target_cleaned, file = here("data", "R_objects", "bird_data_target_cleaned.rda"))
-
+load(here("data", "R_objects", "bird_data_target_cleaned.rda"))
 
 # effort data cleaning ----------------------------------------------------
 
-# get the effort data (site active datetime)
-load(here("data", "effort", "effort_site_date.RData"))
-
-# effort in each day (site active day)
-effort_daily <- effort_eval_1 %>%
-  mutate(date = date(datetime),
-         year = year(datetime),
-         yday = yday(datetime)) %>%
-  distinct(site, date, year, yday)
+# # get the effort data (site active datetime)
+# load(here("data", "effort", "effort_site_date.RData"))
+# 
+# # effort in each day (site active day)
+# effort_daily <- effort_eval_1 %>%
+#   mutate(date = date(datetime),
+#          year = year(datetime),
+#          yday = yday(datetime)) %>%
+#   distinct(site, date, year, yday)
 
 #save(effort_daily, file = here("data", "R_objects", "effort_daily.rda"))
-
+load(here("data", "R_objects", "effort_daily.rda"))
 
 
 # weather data cleaning ---------------------------------------------------
 
 # Historical Data from ECCC: https://climate.weather.gc.ca/historical_data/search_historic_data_e.html
 # Lat = -124.29 ; Lon = 54.46
-weather_data <- list.files(here("data", "weather_2020_2022_daily"),
-                        pattern = ".csv$", recursive = TRUE,
-                        full.names = TRUE) %>%
-  map_df(~ read_csv(file = .))
-
-weather_data_cleaned <- weather_data %>%
-  clean_names() %>%
-  mutate(date = as_date(date_time),
-         yday = yday(date),
-         year = year(date)) %>%
-  filter(month(date) %in% 5:7) %>% # the same as the effort, from May to July
-  select(date, year, yday, max_temp_c, min_temp_c, mean_temp_c) 
+# weather_data <- list.files(here("data", "weather_2020_2022_daily"),
+#                         pattern = ".csv$", recursive = TRUE,
+#                         full.names = TRUE) %>%
+#   map_df(~ read_csv(file = .))
+# 
+# weather_data_cleaned <- weather_data %>%
+#   clean_names() %>%
+#   mutate(date = as_date(date_time),
+#          yday = yday(date),
+#          year = year(date)) %>%
+#   filter(month(date) %in% 5:7) %>% # the same as the effort, from May to July
+#   select(date, year, yday, max_temp_c, min_temp_c, mean_temp_c) 
 
 #save(weather_data_cleaned, file = here("data", "R_objects", "weather_data_cleaned.rda"))
+load(here("data", "R_objects", "weather_data_cleaned.rda"))
+
 
 
 
 # check the temporal change of the detections -----------------------------
 
 qualified_ARUs <- bird_data_target_cleaned %>%
-  arrange(site, year, date) %>%  # ensure sorted by time
   group_by(site, year) %>%
+  # summarize(OSFL_days = n_distinct(date)) %>%
+  # filter(OSFL_days >= 5) %>%
+  
   # compute the difference (in days) between consecutive detections
   mutate(day_diff = as.numeric(difftime(date, lag(date), units = "days"))) %>%
   # flag if any consecutive detection days differ by exactly 1
@@ -94,6 +98,7 @@ qualified_ARUs <- bird_data_target_cleaned %>%
   # keep only those with at least one consecutive pair
   filter(has_consecutive) %>%
   select(site, year) 
+  
 
 # effort data to fit the qualifed ARUs
 effort_filtered <- effort_daily %>%
@@ -102,25 +107,24 @@ effort_filtered <- effort_daily %>%
 # detection data to fit the qualified ARUs
 detection_filtered <- bird_data_target_cleaned %>%
   semi_join(qualified_ARUs, by = c("site", "year")) %>%
-  count(site, date, year, yday, name = "detections") 
+  count(site, date, year, yday, name = "detections")
 
 # summarize the effort data to get the number of detections on each date
 aru_daily <- detection_filtered %>%
   full_join(effort_filtered, by = c("site", "date", "year", "yday")) %>%
   mutate(detections = replace_na(detections, 0)) %>%
-  arrange(site, year, yday) 
+  arrange(site, year, yday)
 
 #save(aru_daily, file = here("data", "R_objects", "aru_daily_detections.rda"))
-
+load(here("data", "R_objects", "aru_daily_detections.rda"))
 
 
 # trend modelling GLMM and GAM --------------------------------------------
 
-load(here("data", "R_objects", "aru_daily_detections.rda"))
-
 model_data <- aru_daily %>%
   mutate(year = as_factor(year),
          site = as_factor(site),
+         year_site = interaction(year, site),
          yday_poly = poly(yday, 2, raw = TRUE),
          yday_scaled = scale(yday),
          yday_scaled_poly = poly(yday_scaled, 2, raw = TRUE))
@@ -173,48 +177,136 @@ model_gam_2 <- gam(detections ~ s(yday, bs = "cc", by = year) + s(site, bs = "re
                    data = model_data,
                    method = "REML")
 
+
+# each year has its own seasonal curve
 model_gam_3 <- gam(detections ~ s(yday, bs = "cc", by = year) + s(site, bs = "re"),
-                   family = nb(),             # negative binomial, mgcv estimates theta
+                   family = nb(), # negative binomial, mgcv estimates theta
                    data = model_data,
                    method = "REML")
 
+model_gam_4 <- gam(detections ~ s(yday, bs = "cc", by = year) + 
+                     s(year_site, bs = "re"),
+                   family = nb(), # negative binomial, mgcv estimates theta
+                   data = model_data,
+                   method = "REML")
 
-model_single <- gam(detections ~ s(yday, bs = "cc") + s(site, bs = "re"),
+# single seasonal pattern across years
+
+# Birds have one seasonal activity pattern that is stable across years.
+# Different sites just have different overall detection levels.
+model_gam_5 <- gam(detections ~ s(yday, bs = "cc") + s(site, bs = "re"),
                     family = nb(),
                     data = model_data,
                     method = "REML")
 
+# One shared seasonal curve for all years (same timing).
+# BUT each site can change independently across years in overall detection level.
+model_gam_6 <- gam(detections ~ s(yday, bs = "cc") + s(year_site, bs = "re"),
+                   family = nb(),
+                   data = model_data,
+                   method = "REML")
 
+# One seasonal pattern that does not change in shape.
+# Each year has a global shift (higher or lower overall activity).
+# Each site has a constant difference (better or worse for detections).
+model_gam_7 <- gam(detections ~ s(yday, bs = "cc") + s(year, bs = "re") + s(site, bs = "re"),
+                   family = nb(),
+                   data = model_data,
+                   method = "REML")
+
+
+
+model_gam_8 <- gam(detections ~ s(yday, bs="cc") + s(yday, year, bs="fs") + s(site, bs="re"))
 
 
 
 # model goodness of fit check ---------------------------------------------
 
-final_model <- model_gam_3 # model 6 or 9 are the best models
+model_year <- model_gam_4 # based on AIC, REML, GAM diagnostics, overfitting, Biological plausibility
+model_general <- model_gam_6 # based on AIC, REML, GAM diagnostics, overfitting, Biological plausibility
 
-gam.check(final_model)
-summary(final_model)
+gam.check(model_gam_3)
+gam.check(model_gam_4)
+
+summary(model_gam_3)
+summary(model_gam_4)
+
+AIC(model_gam_3, model_gam_4)
+
+
 
 
 # model visualization -----------------------------------------------------
 
-# curves for each year
-final_model <- model_gam_3 
+# construct the dataframe for the predicted values
+model_vis_data <- model_data %>%
+  # model_year predictions
+  mutate(pred_year_population = predict(model_year,
+                                        type = "response",
+                                        exclude = "s(year_site)")) %>%
+  mutate(pred_year_subject = predict(model_year,
+                                     type = "response")) 
+  # model_general predictions
+  # mutate(pred_general_population = predict(model_general, 
+  #                                          type = "response",
+  #                                          exclude = "s(year_site)")) %>%
+  # mutate(pred_general_subject = predict(model_general,
+  #                                       type = "response"))
 
-model_vis <- model_data %>%
-  mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
-  group_by(year, site) %>%
-  mutate(detections_scaled = detections / max(detections, na.rm = TRUE) * max(predicted_population, na.rm = TRUE)) %>%
-  ungroup() %>%
+
+
+# visualize the error term in prediction
+model_vis_residules <- model_vis_data %>%
+  pivot_longer(cols = starts_with("pred_"),
+               names_to = "prediction_type",
+               values_to = "predicted_values") %>%
+  ggplot() +
+  geom_jitter(aes(x = yday, 
+                  y = predicted_values - detections, 
+                  group = prediction_type,
+                  colour = prediction_type),
+              width = 0,       # no horizontal jitter
+              height = 5,    # adjust jitter around 0
+              alpha = 0.4,
+              size = 3) +
+  scale_colour_manual(values = c("pred_year_population" = "#528B8B",
+                                 "pred_year_subject" = "#8B5F65")) +
   
+  theme_bw()
+
+model_vis_residules
+
+# visualize the predicted curves
+
+
+
+
+
+
+
+
+
+model_vis <- model_vis_data %>%
+  # plotting
   ggplot(aes(x = yday)) + 
   geom_point(aes(y = detections_scaled, group = site, colour = year),
-            size = 1, alpha = 0.5) +
-  geom_line(aes(y = predicted_population, colour = "Population"), linewidth = 1.5) +
-  facet_wrap(~ year, ncol = 1, scale = "free_y") +
+            size = 2, alpha = 0.3) +
+  geom_line(aes(y = predicted_population, colour = year), 
+            linewidth = 2, alpha = 0.5) +
+  labs(y = "OSFL detections (scaled)", x = "Day of Year") +
+  scale_colour_manual(values = c("2020" = "#4F5D2F", 
+                                 "2021" = "#D9AA55", 
+                                 "2022" = "#70798C")) +
+  # setting the theme for the figure
   theme_bw() +
-  labs(y = "Detections (scaled)", x = "Day of Year") +
-  scale_colour_manual(values = c("Population" = "black", "2020" = "#eac435", "2021" = "#345995", "2022" = "#7bccc4"))
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
+        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
+        
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.88, 0.85))
 
   
   # mutate(predicted_population = predict(final_model, type = "response", exclude = "s(site)")) %>%
