@@ -26,7 +26,7 @@ library(performance) # for model evaluation
 library(datawizard)
 
 
-# bird data cleaning ------------------------------------------------------
+# Data - bird data cleaning ------------------------------------------------------
 
 # # bird detections from 3 years of data
 # bird_data <- birdnet_combine(here("data", "audio_output_combined"))
@@ -44,7 +44,7 @@ library(datawizard)
 #save(bird_data_target_cleaned, file = here("data", "R_objects", "bird_data_target_cleaned.rda"))
 load(here("data", "R_objects", "bird_data_target_cleaned.rda"))
 
-# effort data cleaning ----------------------------------------------------
+# Data - effort data cleaning ----------------------------------------------------
 
 # # get the effort data (site active datetime)
 # load(here("data", "effort", "effort_site_date.RData"))
@@ -60,7 +60,7 @@ load(here("data", "R_objects", "bird_data_target_cleaned.rda"))
 load(here("data", "R_objects", "effort_daily.rda"))
 
 
-# weather data cleaning ---------------------------------------------------
+# Data - weather data cleaning ---------------------------------------------------
 
 # Historical Data from ECCC: https://climate.weather.gc.ca/historical_data/search_historic_data_e.html
 # Lat = -124.29 ; Lon = 54.46
@@ -83,40 +83,195 @@ load(here("data", "R_objects", "weather_data_cleaned.rda"))
 
 
 
-# check the temporal change of the detections -----------------------------
+# Data cleaning - check the temporal change of the detections -----------------------------
 
-qualified_ARUs <- bird_data_target_cleaned %>%
-  group_by(site, year) %>%
-  # summarize(OSFL_days = n_distinct(date)) %>%
-  # filter(OSFL_days >= 5) %>%
-  
-  # compute the difference (in days) between consecutive detections
-  mutate(day_diff = as.numeric(difftime(date, lag(date), units = "days"))) %>%
-  # flag if any consecutive detection days differ by exactly 1
-  summarize(has_consecutive = any(day_diff == 1, na.rm = TRUE),
-            .groups = "drop") %>%
-  # keep only those with at least one consecutive pair
-  filter(has_consecutive) %>%
-  select(site, year) 
-  
-
-# effort data to fit the qualifed ARUs
-effort_filtered <- effort_daily %>%
-  semi_join(qualified_ARUs, by = c("site", "year"))
-
-# detection data to fit the qualified ARUs
-detection_filtered <- bird_data_target_cleaned %>%
-  semi_join(qualified_ARUs, by = c("site", "year")) %>%
-  count(site, date, year, yday, name = "detections")
-
-# summarize the effort data to get the number of detections on each date
-aru_daily <- detection_filtered %>%
-  full_join(effort_filtered, by = c("site", "date", "year", "yday")) %>%
-  mutate(detections = replace_na(detections, 0)) %>%
-  arrange(site, year, yday)
+# qualified_ARUs <- bird_data_target_cleaned %>%
+#   group_by(site, year) %>%
+#   # summarize(OSFL_days = n_distinct(date)) %>%
+#   # filter(OSFL_days >= 5) %>%
+#   
+#   # compute the difference (in days) between consecutive detections
+#   mutate(day_diff = as.numeric(difftime(date, lag(date), units = "days"))) %>%
+#   # flag if any consecutive detection days differ by exactly 1
+#   summarize(has_consecutive = any(day_diff == 1, na.rm = TRUE),
+#             .groups = "drop") %>%
+#   # keep only those with at least one consecutive pair
+#   filter(has_consecutive) %>%
+#   select(site, year) 
+#   
+# 
+# # effort data to fit the qualifed ARUs
+# effort_filtered <- effort_daily %>%
+#   semi_join(qualified_ARUs, by = c("site", "year"))
+# 
+# # detection data to fit the qualified ARUs
+# detection_filtered <- bird_data_target_cleaned %>%
+#   semi_join(qualified_ARUs, by = c("site", "year")) %>%
+#   count(site, date, year, yday, name = "detections")
+# 
+# # summarize the effort data to get the number of detections on each date
+# aru_daily <- detection_filtered %>%
+#   full_join(effort_filtered, by = c("site", "date", "year", "yday")) %>%
+#   mutate(detections = replace_na(detections, 0)) %>%
+#   arrange(site, year, yday)
 
 #save(aru_daily, file = here("data", "R_objects", "aru_daily_detections.rda"))
 load(here("data", "R_objects", "aru_daily_detections.rda"))
+
+
+
+
+
+# Exploratory - examination before modelling to check the trend ----------------
+
+# Quick loess plots: detection trend by yday, by year and by site
+
+model_data <- aru_daily %>%
+  mutate(year = as_factor(year),
+         site = as_factor(site),
+         year_site = interaction(year, site)) 
+
+# Raw detections by yday, faceted by year
+detection_by_year <- ggplot(model_data, aes(yday, detections)) +
+  geom_jitter(alpha = 0.15, height = 2, colour = "#53868B") +
+  geom_smooth(method = "loess", se = FALSE, colour = "#53868B") +
+  facet_wrap(~ year) +
+  labs(y = "No. of OSFL detections",
+       x = "Day of the year") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
+        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
+        
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.88, 0.85))
+
+
+# Raw detections by yday, faceted by site
+detection_by_site <- ggplot(model_data, aes(yday, detections)) +
+  geom_smooth(method = "loess", colour = "#53868B") +
+  facet_wrap(~ site, ncol = 4) +
+  labs(y = "No. of OSFL detections",
+       x = "Day of the year") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)),
+        axis.title.x = element_text(margin = margin(t = 3, r = 0, b = 0, l = 0)),
+        
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.88, 0.85))
+
+
+
+# combine and save the plot
+year_site_raw <- (detection_by_year + detection_by_site) +
+  plot_annotation(title = NULL,
+                  subtitle = NULL,
+                  caption = NULL,
+                  theme = theme(),
+                  tag_levels = "A") &
+  theme(plot.tag = element_text(size = 16)) &
+  ylab(NULL) & 
+  theme(plot.margin = margin(5.5, 5.5, 0, 5.5))
+
+
+year_site_raw_1 <- wrap_elements(panel = year_site_raw) +
+  labs(tag = "No. of OSFL detections") +
+  theme(plot.tag = element_text(size = 16, angle = 90),
+        plot.tag.position = "left")
+
+
+ggsave(plot = year_site_raw_1,
+       filename = here("docs", "figures", "fig_detection_by_year_site.png"),
+       width = 32,
+       height = 16,
+       units = "cm",
+       dpi = 300)
+
+
+
+
+
+
+# Model - Stepwise GAM model fitting ----------------------------------------------
+
+# this section was done on Nov.17, to summarize the works that had been 
+# done previously. As the previous versions were too messey to produce 
+# meaningful report
+
+# a null model - only random intercept for site
+m0 <- gam(detections ~ 1 + s(site, bs="re"),
+          family = nb(), data = model_data, method = "REML")
+
+# single shared seasonal curve shape across years and sites
+# k controls basis dimension — start ~20 (adjust if pattern is complex). Use bs="cc" because day-of-year is cyclic.
+m1 <- gam(detections ~ s(yday, bs = "cc", k = 20) + 
+            s(site, bs = "re"),
+          family = nb(), data = model_data, method = "REML")
+
+# single shared seasonal shape, differing overall level by year and by site
+m2 <- gam(detections ~ s(yday, bs = "cc", k = 20) +
+            s(year, bs = "re") + s(site, bs = "re"),
+          family = nb(), data = model_data, method = "REML")
+
+# each year gets its own smooth shape (i.e., same yday basis but different smooth for each year).
+m3 <- gam(detections ~ s(yday, bs = "cc", by = year, k = 20) + 
+            s(site, bs = "re"),
+          family = nb(), data = model_data, method = "REML")
+
+
+# Site × Year random intercept (separate intercepts for each year at each site), expecting sites have annual variation in intercepts
+m4 <- gam(detections ~ s(yday, bs = "cc", k = 20) + 
+            s(year_site, bs = "re"),
+          family = nb(), data = model_data, method = "REML")
+
+# Shared seasonal shape, with smooth interaction between yday and year to allow shape to vary smoothly across years
+m5 <- gam(detections ~ s(yday, bs = "cc", k = 20) + 
+            s(yday, year, bs = "fs", k = 10) + 
+            s(site, bs = "re"),
+          family = nb(), data = model_data, method = "REML")
+
+# Each year has its own seasonal curve + Site × Year random intercept
+m6 <- gam(detections ~ s(yday, bs="cc", by = year, k = 20) + 
+            s(year_site, bs = "re"),
+          family = nb(), data = model_data, method = "REML")
+
+
+
+
+
+
+
+
+
+# Model - model comparison and selection ----------------------------------
+
+m1_ml <- update(m1, method = "ML")
+m2_ml <- update(m2, method = "ML")
+m3_ml <- update(m3, method = "ML")
+m4_ml <- update(m4, method = "ML")
+m5_ml <- update(m5, method = "ML")
+m6_ml <- update(m6, method = "ML")
+
+AIC(m1_ml, m2_ml, m3_ml, m4_ml, m5_ml, m6_ml)
+
+# choose the best and check the diagnostics
+m_best <- m4
+
+library(DHARMa)
+res <- simulateResiduals(m_best)
+plot(res)
+testDispersion(res)
+testZeroInflation(res)
+
+
+library(gratia)
+draw(m_best)
+
 
 
 # trend modelling GLMM and GAM --------------------------------------------
