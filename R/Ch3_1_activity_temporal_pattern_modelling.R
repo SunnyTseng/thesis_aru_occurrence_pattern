@@ -257,10 +257,42 @@ m4_ml <- update(m4, method = "ML")
 m5_ml <- update(m5, method = "ML")
 m6_ml <- update(m6, method = "ML")
 
-AIC(m1_ml, m2_ml, m3_ml, m4_ml, m5_ml, m6_ml)
+model_list <- list(m1_ml, m2_ml, m3_ml, m4_ml, m5_ml, m6_ml)
+names(model_list) <- c("m1","m2","m3","m4","m5","m6")
+
+aic_table <- model.sel(model_list)
+
+
+# show the model selection table
+aic_table_save <- aic_table %>%
+  as_tibble() %>%
+  mutate(model = rownames(aic_table)) %>%
+  select(model, df, AICc, delta, weight) %>%
+  mutate(AICc = round(AICc, 0),
+         delta = round(delta, 0)) %>%
+  
+  gt() %>%
+  cols_label(model = "Model",
+             df = "DF",
+             delta = "Delta AICc",
+             weight = "AICc weight") %>%
+  fmt_percent(columns = weight,
+              decimals = 0) %>%
+  cols_align(align = "center") %>%
+  tab_options(table.font.size = 12,
+              heading.title.font.size = 16,
+              heading.subtitle.font.size = 12)
+
+gtsave(data = aic_table_save, 
+       filename = here("docs", "tables", "aic_table.rtf"))
+
+
+# final model evaluation and visualization --------------------------------
 
 # choose the best and check the diagnostics
 m_best <- m4
+
+gam.check(m_best)
 
 library(DHARMa)
 res <- simulateResiduals(m_best)
@@ -268,11 +300,111 @@ plot(res)
 testDispersion(res)
 testZeroInflation(res)
 
-
 library(gratia)
 draw(m_best)
 
 
+# model visualization
+pred_data <- predict(m_best, type = "response",
+                    se.fit = TRUE, exclude = "s(year_site)") %>%
+  as_tibble() %>%
+  rename(se_population = se.fit,
+         pred_population = fit) %>%
+  mutate(lower = pred_population - 1.96 * se_population,
+         upper = pred_population + 1.96 * se_population) %>%
+  mutate(pred_subject = predict(m_best, type = "response")) %>%
+  bind_cols(model_data %>% 
+              select(yday, detections, site, year, year_site))
+
+
+# vis1 - visualize the error term in prediction
+model_vis_population <- pred_data %>%
+  ggplot(aes(x = yday)) + 
+  geom_ribbon(aes(ymin = lower, ymax = upper), 
+              alpha = 0.1, fill = "#1800ad") +
+  geom_line(aes(y = pred_population),
+            colour = "#1800ad", 
+            linewidth = 2, alpha = 0.7) +
+  labs(y = expression("Predicted detections (" * hat(y)[i] * ")"), 
+       x = "Day of the year") +
+  scale_y_continuous(breaks = scales::pretty_breaks()) +
+  # setting the theme for the figure
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 0, b = 0, l = 3)),
+        axis.title.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.88, 0.85))
+
+model_vis_population
+
+
+# vis2 - visualize the error term in prediction
+model_vis_subject <- pred_data %>%
+  ggplot(aes(x = yday)) + 
+  geom_line(aes(y = pred_subject, group = year_site),
+            colour = "#5ce1e6",
+            linewidth = 2, alpha = 0.4) +
+  labs(y = expression("Predicted detections (" * hat(y)[i] * ")"), 
+       x = "Day of the year") +
+  scale_y_continuous(breaks = scales::pretty_breaks()) +
+  # setting the theme for the figure
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 0, b = 0, l = 3)),
+        axis.title.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = c(0.88, 0.85))
+
+model_vis_subject
+
+
+# vis3 - visualize the error term in prediction
+model_vis_residules <- pred_data %>%
+  pivot_longer(cols = starts_with("pred_"),
+               names_to = "prediction_type",
+               values_to = "predicted_values") %>%
+  ggplot() +
+  geom_jitter(aes(x = yday, 
+                  y = detections - predicted_values, 
+                  group = prediction_type,
+                  colour = prediction_type),
+              width = 0, height = 5, alpha = 0.4, size = 3) +
+  scale_colour_manual(labels = c("pred_population" = "population",
+                                 "pred_subject" = "subject"),
+                      values = c("pred_population" = "#1800ad",
+                                 "pred_subject" = "#5ce1e6")) +
+  labs(y = expression("Residuals (" * y[i] - hat(y)[i] * ")"), 
+       x = "Day of the year") +
+  theme_bw() + 
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 0, b = 0, l = 3)),
+        axis.title.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0)),
+        
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12),
+        legend.position = c(0.8, 0.15))
+  
+model_vis_residules
+
+model_vis_combined <- model_vis_population + model_vis_subject + model_vis_residules
+
+ggsave(plot = model_vis_combined,
+       filename = here("docs", "figures", "fig_model_vis_combined.png"),
+       width = 36,
+       height = 12,
+       units = "cm",
+       dpi = 300)
+
+
+#
 
 # trend modelling GLMM and GAM --------------------------------------------
 
