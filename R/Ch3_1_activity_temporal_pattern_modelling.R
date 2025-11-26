@@ -320,14 +320,22 @@ pred_data <- predict(m_best, type = "response",
 # vis1 - visualize the error term in prediction
 model_vis_population <- pred_data %>%
   ggplot(aes(x = yday)) + 
-  geom_ribbon(aes(ymin = lower, ymax = upper), 
-              alpha = 0.1, fill = "#1800ad") +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              fill = "#1800ad",
+              alpha = 0.1) +
   geom_line(aes(y = pred_population),
-            colour = "#1800ad", 
+            colour = "#1800ad",
             linewidth = 2, alpha = 0.7) +
   labs(y = expression("Predicted detections (" * hat(y)[i] * ")"), 
        x = "Day of the year") +
   scale_y_continuous(breaks = scales::pretty_breaks()) +
+  ylim(-2, NA) +
+  # scale_fill_manual(values = c("2020" = "#104E8B",
+  #                              "2021" = "#009ACD",
+  #                              "2022" = "#1800ad")) +
+  # scale_colour_manual(values = c("2020" = "#104E8B",
+  #                                "2021" = "#009ACD",
+  #                                "2022" = "#1800ad")) +
   # setting the theme for the figure
   theme_bw() +
   theme(axis.title = element_text(size = 16),
@@ -337,7 +345,7 @@ model_vis_population <- pred_data %>%
         
         legend.title = element_blank(),
         legend.text = element_text(size = 16),
-        legend.position = c(0.88, 0.85))
+        legend.position = "none")
 
 model_vis_population
 
@@ -350,7 +358,7 @@ model_vis_subject <- pred_data %>%
             linewidth = 2, alpha = 0.4) +
   labs(y = expression("Predicted detections (" * hat(y)[i] * ")"), 
        x = "Day of the year") +
-  scale_y_continuous(breaks = scales::pretty_breaks()) +
+  #scale_y_continuous(breaks = scales::pretty_breaks()) +
   # setting the theme for the figure
   theme_bw() +
   theme(axis.title = element_text(size = 16),
