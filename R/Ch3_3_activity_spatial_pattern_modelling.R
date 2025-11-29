@@ -48,13 +48,17 @@ cov_lidar <- readxl::read_xlsx(here("data", "JPRF_lidar_2015",
 
 
 # covariate data for prediction
-cov_prediction <- rast(here("data", "JPRF_lidar_2015",
-                            "raster",
-                            "Crown_Closure_above_10m_zero1.tif")) %>%
+files <- here("data", "JPRF_lidar_2015", "raster") %>% 
+  list.files(pattern = "\\.tif$", full.names = TRUE)
+
+cov_prediction <- rast(files) %>%
   aggregate(fact = 15, fun = mean) %>%
   as.data.frame(xy = TRUE) %>%
   as_tibble() %>%
-  rename(cc10 = Crown_Closure_above_10m_zero1)
+  rename(cc10 = Crown_Closure_above_10m_zero1,
+         cc1_3 = Crown_Closure_between_1_and_3m_zero1)
+
+
 
 
 
@@ -91,41 +95,41 @@ OSFL_occ <- OSFL_occ_0 %>%
 
 
 
-# visualization
-OSFL_vis <- OSFL_occ_0 %>%
-  pivot_longer(-site, names_to = "period", values_to = "detections") %>%
-  mutate(detections = replace_na(detections, -1),
-         period = ymd(period),
-         year = year(period)) %>%
-  # plot
-  ggplot(aes(x = period, y = site, fill = factor(detections))) +
-  geom_tile() +
-  scale_fill_manual(values = c("#EEE9E9", "#B9D3EE",  "#6CA6CD")) +
-  facet_wrap(~ year, scales = "free_x") +
-
-  scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
-               date_labels = "%b%d") +
-
-  theme_bw() +
-  labs(x = "Date", y = "Site") +
-  theme(legend.position = "none",
-        strip.background = element_rect(fill = "#C1CDCD"),
-        strip.text.x = element_text(size = 12),
-
-        axis.title = element_text(size = 16),
-        axis.text.x = element_text(size = 12),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank(),
-        axis.title.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0)),
-        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0)))
-
-OSFL_vis
-
-ggsave(filename = here("docs", "figures", "occupancy_matrix.png"),
-       width = 28,
-       height = 10,
-       units = "cm",
-       dpi = 300)
+# # visualization
+# OSFL_vis <- OSFL_occ_0 %>%
+#   pivot_longer(-site, names_to = "period", values_to = "detections") %>%
+#   mutate(detections = replace_na(detections, -1),
+#          period = ymd(period),
+#          year = year(period)) %>%
+#   # plot
+#   ggplot(aes(x = period, y = site, fill = factor(detections))) +
+#   geom_tile() +
+#   scale_fill_manual(values = c("#EEE9E9", "#B9D3EE",  "#6CA6CD")) +
+#   facet_wrap(~ year, scales = "free_x") +
+# 
+#   scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
+#                date_labels = "%b%d") +
+# 
+#   theme_bw() +
+#   labs(x = "Date", y = "Site") +
+#   theme(legend.position = "none",
+#         strip.background = element_rect(fill = "#C1CDCD"),
+#         strip.text.x = element_text(size = 12),
+# 
+#         axis.title = element_text(size = 16),
+#         axis.text.x = element_text(size = 12),
+#         axis.text.y = element_blank(),
+#         axis.ticks.y = element_blank(),
+#         axis.title.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0)),
+#         axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 0)))
+# 
+# OSFL_vis
+# 
+# ggsave(filename = here("docs", "figures", "occupancy_matrix.png"),
+#        width = 28,
+#        height = 10,
+#        units = "cm",
+#        dpi = 300)
 
 
 
@@ -234,46 +238,174 @@ waicOcc(out_cc10)
 waicOcc(out_null)
 
 
-
-
 plot(out_full, 'beta', density = FALSE) # Occupancy parameters.
 plot(out_full, 'alpha', density = FALSE) # Detection parameters.
 
 
+### For making table
 
 
-# prediction --------------------------------------------------------------
+### For making figure
+# Extract occupancy & detection samples
+occ_samps <- as.data.frame(out_full$beta)
+det_samps <- as.data.frame(out_full$alpha)
 
-X.0 <- cbind(1, scale(cov_prediction$cc10))
-out.pred <- predict(out, X.0)
+# Add model type labels
+occ_samps$model <- "Occupancy"
+det_samps$model <- "Detection"
+
+# Combine
+samps <- bind_rows(occ_samps, det_samps)
+
+samps_long <- samps %>%
+  pivot_longer(cols = -model,
+    names_to = "parameter",
+    values_to = "value")
+
+summary_df <- samps_long %>%
+  group_by(model, parameter) %>%
+  summarise(median = median(value, na.rm = TRUE),
+    lower90 = quantile(value, 0.05, na.rm = TRUE),
+    upper90 = quantile(value, 0.95, na.rm = TRUE),
+    lower95 = quantile(value, 0.025, na.rm = TRUE),
+    upper95 = quantile(value, 0.975, na.rm = TRUE)) %>%
+  ungroup() %>%
+  drop_na() %>%
+  filter(parameter != "(Intercept)") %>%
+  mutate(parameter = c("CC (1–3 m)",
+                       "Julian day",
+                       "Forest age >80",
+                       "CC (>10 m)",
+                       "CC (1–3 m)",
+                       "CC (3–10 m)",
+                       "Dist. to water edge",
+                       "Dist. to stand edge",
+                       "Prop. deciduous"))
 
 
-plot.dat <- data.frame(x = cov_prediction$x, 
-                       y = cov_prediction$y, 
+# Posterior effect sizes with 90% and 95% credible intervals
+occupancy_effect <- ggplot(summary_df %>% filter(model == "Occupancy"),
+       aes(x = reorder(parameter, median))) +
+  
+  # predicted intervals
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_linerange(aes(ymin = lower95, ymax = upper95), 
+                 linewidth = 2, alpha = 0.7, colour = "#191970") +
+  geom_linerange(aes(ymin = lower90, ymax = upper90), 
+                 linewidth = 6, colour = "#191970") +
+
+  # fine tune
+  labs(y = "Effect size (logit scale)", x = "") +
+  
+  # theme setting
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 13),
+        axis.title = element_text(size = 16),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 10)))
+
+
+
+
+
+detection_effect <- ggplot(summary_df %>% filter(model == "Detection"),
+                           aes(x = reorder(parameter, median))) +
+  
+  # predicted intervals
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_linerange(aes(ymin = lower95, ymax = upper95), 
+                 linewidth = 2, alpha = 0.7, colour = "#48D1CC") +
+  geom_linerange(aes(ymin = lower90, ymax = upper90), 
+                 linewidth = 6, colour = "#48D1CC") +
+  
+  # fine tune
+  labs(y = "", x = "") +
+  
+  # theme setting
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 13),
+        axis.title = element_text(size = 16),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(t = 0, r = -5, b = 0, l = 10)))
+
+effect_combined <- occupancy_effect + detection_effect
+
+ggsave(plot = effect_combined,
+       filename = here("docs", "figures", "fig_occupancy_modelling.png"),
+       width = 26,
+       height = 14,
+       units = "cm",
+       dpi = 300)
+
+
+
+
+
+
+# prediction of occupancy probability -------------------------------------
+
+occ_var <- cov_prediction %>%
+  filter(cc10 != 0)
+
+X.occ <- cbind(1, scale(occ_var$cc10))
+  
+out.pred <- predict(out_cc10, X.occ, type = "occupancy")
+
+plot.dat <- data.frame(x = occ_var$x, 
+                       y = occ_var$y, 
                        mean.psi = apply(out.pred$psi.0.samples, 2, mean), 
                        sd.psi = apply(out.pred$psi.0.samples, 2, sd), 
-                       stringsAsFactors = FALSE)
-# Make a species distribution map showing the point estimates,
-# or predictions (posterior means)
-
-dat.stars <- plot.dat %>%
-  filter(mean.psi > 0.2) %>%
-  st_as_stars(dims = c('x', 'y'))
-
-
+                       stringsAsFactors = FALSE) %>%
+  st_as_sf(coords = c('x', 'y'), crs = 26910) %>%
+  st_transform(crs = 4326) 
 
 ggplot() + 
-  geom_stars(data = dat.stars, aes(x = x, y = y, 
-                                   fill = mean.psi)) +
-  #scale_fill_viridis_c(option = "plasma", na.value = "transparent") +
-  scale_fill_gradient(low = "white", high = "lightsteelblue4", na.value = "white") +
-  labs(x = 'Easting', y = 'Northing', fill = '', 
-       title = 'Mean OSFL occurrence probability') +
-  theme_bw()
+  annotation_map_tile(type = "cartolight", zoom = 11) +
+  geom_sf(data = plot.dat, aes(colour = mean.psi)) +
+  scale_colour_gradient(low = "darkseagreen1", high = "darkgreen", na.value = NA) +
+  labs(x = 'Easting', y = 'Northing', colour = '') +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0)),
+        axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 0)))
+  
+
+# 
+
+det_var <- cov_prediction %>%
+  filter(cc1_3 != 0)
+
+X.det <- cbind(1, det_var$cc1_3)
+
+out.det.pred <- predict(out_cc10, X.det, type = "detection")
+
+plot.det.dat <- data.frame(x = det_var$x, 
+                           y = det_var$y, 
+                           mean.psi = apply(out.det.pred$p.0.samples, 2, mean), 
+                           sd.psi = apply(out.det.pred$p.0.samples, 2, sd), 
+                           stringsAsFactors = FALSE) %>%
+  st_as_sf(coords = c('x', 'y'), crs = 26910) %>%
+  st_transform(crs = 4326) 
+
+ggplot() + 
+  annotation_map_tile(type = "cartolight", zoom = 11) +
+  geom_sf(data = plot.det.dat, aes(colour = mean.psi)) +
+  scale_colour_gradient(low = "#FFF8DC", high = "#8B8878", na.value = NA) +
+  labs(x = 'Easting', y = 'Northing', colour = '') +
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0)),
+        axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 0)))
+
+
+
 
 # plot the cov_prediction
 ggplot() + 
-  geom_raster(data = cov_prediction, aes(x = x, y = y, fill = cc10)) +
+  geom_raster(data = cov_prediction %>% filter(cc10 != 0), 
+              aes(x = x, y = y, fill = cc10)) +
   scale_fill_viridis_c(option = "plasma") +
   labs(x = 'Easting', y = 'Northing', fill = '', 
        title = 'Crown Closure above 10m (%)') +
