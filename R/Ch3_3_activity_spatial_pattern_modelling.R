@@ -138,7 +138,7 @@ OSFL_occ <- OSFL_occ_0 %>%
 
 OSFL_cov <- cov_lidar %>%
   right_join(OSFL_occ_0) %>%
-  select(dem, slope, aspect, d_lid_rip_wet_str_le, 
+  dplyr::select(dem, slope, aspect, d_lid_rip_wet_str_le, 
          d_vri_polyedge, cc1_3, cc3_10, cc10, 
          age_80, prop_decid) 
 
@@ -370,6 +370,11 @@ ggplot() +
         axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0)),
         axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 0)))
   
+ggsave(filename = here("docs", "figures", "OFSL_map_occpancy.png"),
+       width = 20,
+       height = 14,
+       units = "cm",
+       dpi = 300)
 
 # 
 
@@ -398,6 +403,12 @@ ggplot() +
         axis.text = element_text(size = 12),
         axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0)),
         axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 0)))
+
+ggsave(filename = here("docs", "figures", "OFSL_map_detection.png"),
+       width = 20,
+       height = 14,
+       units = "cm",
+       dpi = 300)
 
 
 

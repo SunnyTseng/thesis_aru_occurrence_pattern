@@ -9,6 +9,10 @@
 # general data wrangling
 library(tidyverse)
 library(here)
+library(raster)
+library(sf)
+library(ggspatial)
+library(smoothr)
 
 # for plotting
 library(RColorBrewer)
@@ -28,6 +32,26 @@ load(here("data", "R_objects", "weather_data_cleaned.rda"))
 # aru activity data for temporal pattern modelling
 load(here("data", "R_objects", "aru_daily_detections.rda"))
 
+# aru coordinate
+site_coordinates <- read_csv(here("data", "map", "JPRF_all_sites.csv"))
+
+# JPRF boundary
+jprf_raster <- raster(here("data", "JPRF_lidar_2015", 
+                           "raster", "Crown_Closure_above_10m_zero1.tif")) %>%
+  aggregate(fact = 15, fun = mean)
+
+# Reclassify: inside = 1, outside = NA
+jprf_raster[jprf_raster == 0] <- NA
+jprf_raster[jprf_raster > 0] <- 1
+
+jprf_poly <- jprf_raster %>%
+  rasterToPolygons(dissolve = TRUE) %>%
+  st_as_sf() %>%
+  st_transform(4326) %>%
+  st_make_valid() %>%
+  fill_holes(threshold = units::set_units(4000000, m^2))
+
+
 
 # daily occupancy matrix --------------------------------------------------
 
@@ -36,6 +60,47 @@ full_aru_daily <- bird_data_target_cleaned %>%
   count(site, date, year, yday, name = "detections") %>%
   right_join(effort_daily, by = c("site", "date", "year", "yday")) %>%
   mutate(detections = replace_na(detections, 0)) 
+
+
+# visualization in a map version
+OSFL_map <- full_aru_daily %>%
+  
+  # data wrangling
+  group_by(site) %>%
+  summarize(ARU_days = n(),
+            OSFL_days = sum(detections > 0)) %>%
+  left_join(site_coordinates, by = join_by("site" == "Name")) %>%
+  st_as_sf(coords = c("X", "Y"), crs = 4326) %>%
+  
+  # make the plot
+  ggplot() +
+  annotation_map_tile(type = "cartolight", zoom = 11) +
+  geom_sf(data = jprf_poly, colour = "darkgrey", fill = "darkgreen", 
+          size = 1, alpha = 0.2) +
+  geom_sf(aes(size = ARU_days), colour = "#E69F00", alpha = 0.5) +
+  geom_sf(aes(size = OSFL_days), colour = "#00868B", alpha = 0.5) +
+  
+  # fine tune
+  labs(x = 'Easting', y = 'Northing', size = 'No. of days') +
+  scale_size_continuous(range = c(1, 12)) +
+  
+  theme_bw() +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        axis.title.x = element_text(margin = margin(t = 10, r = 0, b = 0, l = 0)),
+        axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 0)))
+  
+ggsave(plot = OSFL_map,
+       filename = here("docs", "figures", "OFSL_map.png"),
+       width = 28,
+       height = 16,
+       units = "cm",
+       dpi = 300)
+
+
+
 
 
 # visualization 
@@ -77,6 +142,8 @@ full_aru_daily_vis <- full_aru_daily %>%
         axis.ticks.y = element_blank())
 
 full_aru_daily_vis
+
+
 
 ggsave(plot = full_aru_daily_vis,
        filename = here("docs", "figures", "full_aru_daily_vis.png"),
