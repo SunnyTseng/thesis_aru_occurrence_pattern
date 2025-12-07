@@ -176,7 +176,7 @@ aru_proportion_vis <- aru_daily %>%
   
   # fine-tune
   facet_wrap(~ year, ncol = 1) +
-  labs(x = "Date", y = "Proportion of qualified ARUs") +
+  labs(x = "Date", y = "Proportion of selected sites") +
   scale_x_date(breaks = scales::pretty_breaks(n = 3), # Automatically choose ~3 breaks
                date_labels = "%b%d") +
   scale_fill_manual(values = c("#7bccc4", "#345995"),
