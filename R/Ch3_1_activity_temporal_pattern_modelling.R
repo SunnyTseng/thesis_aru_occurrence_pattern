@@ -290,7 +290,7 @@ gtsave(data = aic_table_save,
 # final model evaluation and visualization --------------------------------
 
 # choose the best and check the diagnostics
-m_best <- m4
+m_best <- m6
 
 gam.check(m_best)
 
@@ -320,22 +320,21 @@ pred_data <- predict(m_best, type = "response",
 # vis1 - visualize the error term in prediction
 model_vis_population <- pred_data %>%
   ggplot(aes(x = yday)) + 
-  geom_ribbon(aes(ymin = lower, ymax = upper),
-              fill = "#1800ad",
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = year),
+              #fill = "#1800ad",
               alpha = 0.1) +
-  geom_line(aes(y = pred_population),
-            colour = "#1800ad",
+  geom_line(aes(y = pred_population, colour = year),
+            #colour = "#1800ad",
             linewidth = 2, alpha = 0.7) +
   labs(y = expression("Predicted detections (" * hat(y)[i] * ")"), 
        x = "Day of the year") +
   scale_y_continuous(breaks = scales::pretty_breaks()) +
-  ylim(-2, NA) +
-  # scale_fill_manual(values = c("2020" = "#104E8B",
-  #                              "2021" = "#009ACD",
-  #                              "2022" = "#1800ad")) +
-  # scale_colour_manual(values = c("2020" = "#104E8B",
-  #                                "2021" = "#009ACD",
-  #                                "2022" = "#1800ad")) +
+  scale_fill_manual(values = c("2020" = "#104E8B",
+                               "2021" = "#009ACD",
+                               "2022" = "#1800ad")) +
+  scale_colour_manual(values = c("2020" = "#104E8B",
+                                 "2021" = "#009ACD",
+                                 "2022" = "#1800ad")) +
   # setting the theme for the figure
   theme_bw() +
   theme(axis.title = element_text(size = 16),
@@ -354,7 +353,7 @@ model_vis_population
 model_vis_subject <- pred_data %>%
   ggplot(aes(x = yday)) + 
   geom_line(aes(y = pred_subject, group = year_site),
-            colour = "#5ce1e6",
+            colour = "#008B8B",
             linewidth = 2, alpha = 0.4) +
   labs(y = expression("Predicted detections (" * hat(y)[i] * ")"), 
        x = "Day of the year") +
@@ -387,7 +386,7 @@ model_vis_residules <- pred_data %>%
   scale_colour_manual(labels = c("pred_population" = "population",
                                  "pred_subject" = "subject"),
                       values = c("pred_population" = "#1800ad",
-                                 "pred_subject" = "#5ce1e6")) +
+                                 "pred_subject" = "#008B8B")) +
   labs(y = expression("Residuals (" * y[i] - hat(y)[i] * ")"), 
        x = "Day of the year") +
   theme_bw() + 

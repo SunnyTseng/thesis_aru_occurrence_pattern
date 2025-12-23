@@ -272,12 +272,12 @@ summary_df <- samps_long %>%
   ungroup() %>%
   drop_na() %>%
   filter(parameter != "(Intercept)") %>%
-  mutate(parameter = c("CC (1–3 m)",
+  mutate(parameter = c("Canopy cover 1–3m",
                        "Julian day",
                        "Forest age >80",
-                       "CC (>10 m)",
-                       "CC (1–3 m)",
-                       "CC (3–10 m)",
+                       "Canopy cover >10m",
+                       "Canopy cover 1–3m",
+                       "Canopy cover 3–10m",
                        "Dist. to water edge",
                        "Dist. to stand edge",
                        "Prop. deciduous"))
@@ -290,9 +290,9 @@ occupancy_effect <- ggplot(summary_df %>% filter(model == "Occupancy"),
   # predicted intervals
   geom_hline(yintercept = 0, linetype = "dashed") +
   geom_linerange(aes(ymin = lower95, ymax = upper95), 
-                 linewidth = 2, alpha = 0.7, colour = "#191970") +
+                 linewidth = 2, alpha = 0.7, colour = "darkgreen") +
   geom_linerange(aes(ymin = lower90, ymax = upper90), 
-                 linewidth = 6, colour = "#191970") +
+                 linewidth = 6, colour = "darkgreen") +
 
   # fine tune
   labs(y = "Effect size (logit scale)", x = "") +
@@ -314,9 +314,9 @@ detection_effect <- ggplot(summary_df %>% filter(model == "Detection"),
   # predicted intervals
   geom_hline(yintercept = 0, linetype = "dashed") +
   geom_linerange(aes(ymin = lower95, ymax = upper95), 
-                 linewidth = 2, alpha = 0.7, colour = "#48D1CC") +
+                 linewidth = 2, alpha = 0.7, colour = "#8B8878") +
   geom_linerange(aes(ymin = lower90, ymax = upper90), 
-                 linewidth = 6, colour = "#48D1CC") +
+                 linewidth = 6, colour = "#8B8878") +
   
   # fine tune
   labs(y = "", x = "") +
