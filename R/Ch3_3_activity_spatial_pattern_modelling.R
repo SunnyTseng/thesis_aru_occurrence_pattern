@@ -28,6 +28,7 @@ effort_period <- effort_daily %>%
   filter(date %within% interval(ymd("2020-06-01"), ymd("2020-06-30")) |
            date %within% interval(ymd("2021-06-01"), ymd("2021-06-30")) | 
            date %within% interval(ymd("2022-06-01"), ymd("2022-06-30"))) %>%
+  
   # check OSFL detection (1 or 0)
   mutate(period = floor_date(date, unit = "5 days")) %>%
   # only keep necessary data
